@@ -105,3 +105,14 @@ class Reasoner(ABC, Generic[ModelT, ResponseT]):
                 )
             except Exception as e:
                 logger.warning(f"Failed to cache response: {e}")
+
+    def cache_request(self, path: Path) -> None:
+        """
+        Cache the last request payload to a file.
+
+        Args:
+            path: Path to save the request JSON.
+        """
+        cache_fn = getattr(self._provider, "cache_request", None)
+        if cache_fn is not None and callable(cache_fn):
+            cache_fn(path)

@@ -1,13 +1,3 @@
-Solve the challenge, use [0,0] ~ [2,2] to locate 9grid, output the coordinates of the correct answer as json.
-
-Follow the following format to return a coordinates wrapped with a json code block:
-```json
-{
-  "challenge_prompt": "please click on the largest animal",
-  "coordinates": [
-    {"box_2d": [0,0]},
-    {"box_2d": [1,2]},
-    {"box_2d": [2,1]}
-  ]
-}
-```
+识别 3x3 九宫格中所有正确格子。
+坐标使用 0 基 `[row,col]`，范围均为 `0..2`。
+只返回符合 `ImageBinaryChallenge` 的 JSON：保留 `challenge_prompt`，`coordinates` 中每项格式为 `{"box_2d":[row,col]}`。
