@@ -180,3 +180,5 @@ generate_content
 
 docs/assets/**/coordinate_grid*.png
 tests/show_answer/
+
+tmp/

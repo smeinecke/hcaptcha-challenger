@@ -221,6 +221,10 @@ class AgentConfig(BaseSettings):
 
     enable_challenger_debug: bool | None = Field(default=False, description="Enable debug mode")
 
+    enable_model_debug_caching: bool = Field(
+        default=False, description="Enable caching of model requests and responses to disk"
+    )
+
     # == Skills Configuration == #
     custom_skills_path: Path | None = Field(
         default=None, description="Path to custom skills rules.yaml"
@@ -523,7 +527,10 @@ class RoboticArm:
             cache_path = self.config.cache_dir.joinpath(f"challenge_view/_artifacts/{uuid4()}.png")
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             await challenge_view.screenshot(type="png", path=cache_path)
-            router_result = await self._challenge_router(challenge_screenshot=cache_path)
+            router_result = await self._challenge_router(
+                challenge_screenshot=cache_path,
+                request_debug_path=cache_path.with_name(f"{cache_path.stem}_model_request.json") if self.config.enable_model_debug_caching else None,
+            )
             self._challenge_prompt = router_result.challenge_prompt
             return router_result.challenge_type
         return None
@@ -663,13 +670,17 @@ class RoboticArm:
             await challenge_view.screenshot(type="png", path=challenge_screenshot)
 
             # Image classification
-            response = await self._image_classifier(challenge_screenshot=challenge_screenshot)
+            response = await self._image_classifier(
+                challenge_screenshot=challenge_screenshot,
+                request_debug_path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_request.json") if self.config.enable_model_debug_caching else None,
+            )
             boolean_matrix = response.convert_box_to_boolean_matrix()
 
             logger.debug(f'[{cid+1}/{crumb_count}]ToolInvokeMessage: {response.log_message}')
-            self._image_classifier.cache_response(
-                path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_answer.json")
-            )
+            if self.config.enable_model_debug_caching:
+                self._image_classifier.cache_response(
+                    path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_answer.json")
+                )
 
             # drive the browser to work on the challenge
             positive_cases = 0
@@ -704,11 +715,13 @@ class RoboticArm:
                 challenge_screenshot=raw,
                 grid_divisions=projection,
                 auxiliary_information=user_prompt,
+                request_debug_path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_request.json") if self.config.enable_model_debug_caching else None,
             )
             logger.debug(f'[{cid+1}/{crumb_count}]ToolInvokeMessage: {response.log_message}')
-            self._spatial_path_reasoner.cache_response(
-                path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_answer.json")
-            )
+            if self.config.enable_model_debug_caching:
+                self._spatial_path_reasoner.cache_response(
+                    path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_answer.json")
+                )
 
             for path in response.paths:
                 await self._perform_drag_drop(path)
@@ -734,11 +747,13 @@ class RoboticArm:
                 challenge_screenshot=raw,
                 grid_divisions=projection,
                 auxiliary_information=user_prompt,
+                request_debug_path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_request.json") if self.config.enable_model_debug_caching else None,
             )
             logger.debug(f'[{cid+1}/{crumb_count}]ToolInvokeMessage: {response.log_message}')
-            self._spatial_point_reasoner.cache_response(
-                path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_answer.json")
-            )
+            if self.config.enable_model_debug_caching:
+                self._spatial_point_reasoner.cache_response(
+                    path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_answer.json")
+                )
 
             for point in response.points:
                 await self.page.mouse.click(point.x, point.y, delay=180)

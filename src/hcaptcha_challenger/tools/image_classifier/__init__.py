@@ -57,7 +57,7 @@ class ImageClassifier(Reasoner[SCoTModelType, ImageBinaryChallenge]):
         """
         return await self._provider.generate_with_images(
             images=[Path(challenge_screenshot)],
-            user_prompt="Solve the challenge, use [0,0] ~ [2,2] to locate 9grid, output the coordinates of the correct answer as JSON.",
+            user_prompt="按 0 基 `[row,col]` 返回九宫格正确答案。",
             description=self.description,
             response_schema=ImageBinaryChallenge,
             **kwargs,
