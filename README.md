@@ -34,6 +34,11 @@ Just implement some interfaces to make `AI vs AI` possible.
 | `image_label_multiple_choice`           | ViT ONNX zero-shot motion [#231109](https://github.com/QIN2DIM/hcaptcha-challenger/issues/917) | -                |
 | `image_drag_drop`                       | Spatial Chain-of-Thought [#250401](https://github.com/QIN2DIM/hcaptcha-challenger/issues/995) | ✅                |
 
+| LLM Backend | Provider | Notes |
+| ----------- | -------- | ----- |
+| Gemini | Google AI Studio | Default provider, requires `GEMINI_API_KEY` |
+| OpenAI-compatible | OpenRouter, Together, Ollama, etc. | Set `LLM_PROVIDER=openai` with custom `LLM_BASE_URL` |
+
 | Advanced Task               | Pluggable Resource                                           |
 | --------------------------- | ------------------------------------------------------------ |
 | `Rank.Strategy`             | nested-model-zoo [#231006](https://github.com/QIN2DIM/hcaptcha-challenger/issues/797) |

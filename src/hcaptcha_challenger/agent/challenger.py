@@ -13,40 +13,49 @@ from asyncio import Queue
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Any
-from typing import List, Tuple
+from typing import Any, List, Tuple
 from uuid import uuid4
 
 import matplotlib.pyplot as plt
 import msgpack
 from loguru import logger
-from playwright.async_api import Locator, expect, Page, Response, TimeoutError, FrameLocator, Frame
-from pydantic import Field, field_validator, SecretStr
+from playwright.async_api import (
+    Frame,
+    FrameLocator,
+    Locator,
+    Page,
+    Response,
+    TimeoutError,
+    expect,
+)
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 from hcaptcha_challenger.helper import create_coordinate_grid
 from hcaptcha_challenger.models import (
-    CaptchaResponse,
-    RequestType,
-    ChallengeSignal,
-    SCoTModelType,
-    DEFAULT_SCOT_MODEL,
     DEFAULT_FAST_SHOT_MODEL,
-    FastShotModelType,
-    SpatialPath,
-    CaptchaPayload,
+    DEFAULT_SCOT_MODEL,
     IGNORE_REQUEST_TYPE_LITERAL,
     INV,
+    CaptchaPayload,
+    CaptchaResponse,
+    ChallengeSignal,
+    ChallengeTypeEnum,
+    CoordinateGrid,
+    FastShotModelType,
+    RequestType,
+    SCoTModelType,
+    SpatialPath,
 )
-from hcaptcha_challenger.models import ChallengeTypeEnum, CoordinateGrid
 from hcaptcha_challenger.skills import SkillManager
 from hcaptcha_challenger.tools import (
-    ImageClassifier,
     ChallengeRouter,
+    ImageClassifier,
     SpatialPathReasoner,
     SpatialPointReasoner,
 )
+from hcaptcha_challenger.tools.internal.providers import ChatProvider, OpenAIProvider
 
 
 def _generate_bezier_trajectory(
@@ -118,9 +127,32 @@ IGNORE_REQUEST_TYPE_LIST = List[SINGLE_IGNORE_TYPE]
 class AgentConfig(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 
+    # == Legacy Gemini Configuration (maintained for backward compatibility) == #
     GEMINI_API_KEY: SecretStr = Field(
         default_factory=lambda: SecretStr(os.environ.get("GEMINI_API_KEY", "")),
         description="Create API Key https://aistudio.google.com/app/apikey",
+    )
+
+    # == Modular LLM Provider Configuration == #
+    LLM_PROVIDER: str = Field(
+        default="gemini",
+        description="LLM provider to use: 'gemini' or 'openai' (OpenAI-compatible)",
+    )
+    LLM_API_KEY: SecretStr | None = Field(
+        default=None,
+        description="API key for the selected LLM provider. If not set, uses GEMINI_API_KEY for Gemini provider.",
+    )
+    LLM_BASE_URL: str | None = Field(
+        default=None,
+        description="Base URL for OpenAI-compatible APIs (e.g., https://openrouter.ai/api/v1)",
+    )
+    LLM_MODEL: str | None = Field(
+        default=None,
+        description="Model name to use. If not set, uses provider-specific defaults.",
+    )
+    OPENAI_ENABLE_LOGGING: bool = Field(
+        default=False,
+        description="Enable request logging for OpenAI provider (logs full request with base64 truncated).",
     )
 
     cache_dir: Path = Path("tmp/.cache")
@@ -285,21 +317,28 @@ class RoboticArm:
         self.config = config
         self._debug = config.enable_challenger_debug
 
+        # Create provider based on configuration
+        provider = self._create_provider()
+
         self._challenge_router = ChallengeRouter(
-            gemini_api_key=self.config.GEMINI_API_KEY.get_secret_value(),
-            model=self.config.CHALLENGE_CLASSIFIER_MODEL,
+            gemini_api_key=self._get_api_key(),
+            model=self._get_model(self.config.CHALLENGE_CLASSIFIER_MODEL),
+            provider=provider,
         )
         self._image_classifier = ImageClassifier(
-            gemini_api_key=self.config.GEMINI_API_KEY.get_secret_value(),
-            model=self.config.IMAGE_CLASSIFIER_MODEL,
+            gemini_api_key=self._get_api_key(),
+            model=self._get_model(self.config.IMAGE_CLASSIFIER_MODEL),
+            provider=provider,
         )
         self._spatial_path_reasoner = SpatialPathReasoner(
-            gemini_api_key=self.config.GEMINI_API_KEY.get_secret_value(),
-            model=self.config.SPATIAL_PATH_REASONER_MODEL,
+            gemini_api_key=self._get_api_key(),
+            model=self._get_model(self.config.SPATIAL_PATH_REASONER_MODEL),
+            provider=provider,
         )
         self._spatial_point_reasoner = SpatialPointReasoner(
-            gemini_api_key=self.config.GEMINI_API_KEY.get_secret_value(),
-            model=self.config.SPATIAL_POINT_REASONER_MODEL,
+            gemini_api_key=self._get_api_key(),
+            model=self._get_model(self.config.SPATIAL_POINT_REASONER_MODEL),
+            provider=provider,
         )
         self._skill_manager = SkillManager(agent_config=config)
         self.signal_crumb_count: int | None = None
@@ -308,6 +347,37 @@ class RoboticArm:
 
         self._checkbox_selector = "//iframe[starts-with(@src,'https://newassets.hcaptcha.com/captcha/v1/') and contains(@src, 'frame=checkbox')]"
         self._challenge_selector = "//iframe[starts-with(@src,'https://newassets.hcaptcha.com/captcha/v1/') and contains(@src, 'frame=challenge')]"
+
+    def _get_api_key(self) -> str:
+        """Get the API key based on provider configuration."""
+        if self.config.LLM_PROVIDER.lower() == "openai":
+            return (self.config.LLM_API_KEY or self.config.GEMINI_API_KEY).get_secret_value()
+        return self.config.GEMINI_API_KEY.get_secret_value()
+
+    def _get_model(self, default_model: str) -> str:
+        """Get the model name, using override if set."""
+        return self.config.LLM_MODEL or default_model
+
+    def _create_provider(self) -> ChatProvider | None:
+        """Create the LLM provider based on configuration."""
+        provider_type = self.config.LLM_PROVIDER.lower()
+
+        if provider_type == "openai":
+            api_key = self._get_api_key()
+            if not api_key:
+                raise ValueError("API key is required. Set LLM_API_KEY or GEMINI_API_KEY.")
+            return OpenAIProvider(
+                api_key=api_key,
+                model=self._get_model("gpt-4o"),
+                base_url=self.config.LLM_BASE_URL,
+                enable_logging=self.config.OPENAI_ENABLE_LOGGING,
+            )
+        elif provider_type == "gemini":
+            # Return None to use default Gemini provider created by Reasoner
+            return None
+        else:
+            logger.warning(f"Unknown provider '{provider_type}', falling back to Gemini")
+            return None
 
     @property
     def checkbox_selector(self) -> str:

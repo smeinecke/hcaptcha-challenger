@@ -84,6 +84,66 @@ if __name__ == "__main__":
 
 ```
 
+## LLM Provider Configuration
+
+hCaptcha Challenger now supports multiple LLM backends through a modular provider system. You can use Google Gemini (default) or any OpenAI-compatible API provider.
+
+### Using Google Gemini (Default)
+
+```python
+from hcaptcha_challenger import AgentConfig
+
+# Uses GEMINI_API_KEY from environment or pass directly
+config = AgentConfig(GEMINI_API_KEY="your-key")
+
+# Or use environment variable GEMINI_API_KEY
+config = AgentConfig()
+```
+
+### Using OpenAI-Compatible Providers (OpenRouter, Together, Local LLMs)
+
+```python
+from hcaptcha_challenger import AgentConfig
+
+# OpenRouter example
+config = AgentConfig(
+    LLM_PROVIDER="openai",
+    LLM_API_KEY="sk-or-v1-...",
+    LLM_BASE_URL="https://openrouter.ai/api/v1",
+    LLM_MODEL="anthropic/claude-3.5-sonnet",
+)
+
+# Local LLM (Ollama) example
+config = AgentConfig(
+    LLM_PROVIDER="openai",
+    LLM_API_KEY="ollama",
+    LLM_BASE_URL="http://localhost:11434/v1",
+    LLM_MODEL="llama3.2-vision",
+)
+
+# OpenAI direct example
+config = AgentConfig(
+    LLM_PROVIDER="openai",
+    LLM_API_KEY="sk-...",
+    LLM_MODEL="gpt-4o",
+)
+```
+
+### Configuration via Environment Variables
+
+You can also configure the provider via `.env` file:
+
+```bash
+# For Gemini (default)
+GEMINI_API_KEY=your-gemini-key
+
+# For OpenAI-compatible providers
+LLM_PROVIDER=openai
+LLM_API_KEY=your-api-key
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_MODEL=anthropic/claude-3.5-sonnet
+```
+
 ## Dataset Collection
 
 If you have your own solver, you can also use `hcaptcha-challenger` to manage image datasets:
