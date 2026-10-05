@@ -13,7 +13,7 @@ from loguru import logger
 from playwright.async_api import Locator, Page, Response, TimeoutError, expect
 from pydantic import BaseModel, Field
 
-from hcaptcha_challenger.models import CaptchaPayload, CaptchaResponse, RequestType
+from hcaptcha_challenger.models import INV, CaptchaPayload, CaptchaResponse, RequestType
 from hcaptcha_challenger.utils import SiteKey
 
 
@@ -207,6 +207,8 @@ class Collector:
         """
         request_type = captcha_payload.request_type.value
         prompt = captcha_payload.get_requester_question()
+        # Prompts can contain newlines/whitespace that make unusable dir names
+        prompt = " ".join(prompt.split()).translate(str.maketrans("", "", "".join(INV)))
         current_datetime = datetime.now().astimezone()
         current_time = current_datetime.strftime("%Y%m%d/%Y%m%d%H%M%S%f")
 

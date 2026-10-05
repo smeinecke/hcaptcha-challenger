@@ -185,3 +185,4 @@ tests/show_answer/
 tmp/
 tmp-old/
 dev/
+dataset/
