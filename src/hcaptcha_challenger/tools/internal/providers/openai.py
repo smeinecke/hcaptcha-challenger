@@ -19,11 +19,36 @@ from pathlib import Path
 from typing import List, Type, TypeVar
 
 from loguru import logger
-from openai import AsyncOpenAI
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+)
 from pydantic import BaseModel
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_fixed
 
 ResponseT = TypeVar("ResponseT", bound=BaseModel)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """
+    Decide whether a failed request is worth retrying.
+
+    Retry: rate limits (429), server errors (>=500), connection/timeout errors,
+    and transient model-output issues (unparseable/empty JSON).
+    Do NOT retry: auth/permission errors (401-404, 410) — they never succeed.
+    """
+    if isinstance(exc, APIStatusError):
+        return exc.status_code == 429 or exc.status_code >= 500
+    if isinstance(exc, (APIConnectionError, APITimeoutError, TimeoutError)):
+        return True
+    if isinstance(exc, ValueError):
+        # Transient model-output issues (bad/empty JSON, schema mismatch);
+        # input validation errors (e.g. "No valid images provided") fail fast.
+        msg = str(exc).lower()
+        return "json" in msg or "empty response" in msg or "validation error" in msg
+    return False
 
 
 def extract_first_json_block(text: str) -> dict | None:
@@ -63,7 +88,12 @@ class OpenAIProvider:
     """
 
     def __init__(
-        self, api_key: str, model: str, base_url: str | None = None, enable_logging: bool = False
+        self,
+        api_key: str,
+        model: str,
+        base_url: str | None = None,
+        enable_logging: bool = False,
+        request_timeout: float = 90.0,
     ):
         """
         Initialize the OpenAI provider.
@@ -74,11 +104,13 @@ class OpenAIProvider:
             base_url: Optional base URL for OpenAI-compatible APIs.
                      If not provided, uses default OpenAI endpoint.
             enable_logging: If True, logs full request details with base64 truncated.
+            request_timeout: Per-request timeout in seconds (default 90).
         """
         self._api_key = api_key
         self._model = model
         self._base_url = base_url
         self._enable_logging = enable_logging
+        self._request_timeout = request_timeout
         self._client: AsyncOpenAI | None = None
         self._response = None
 
@@ -192,6 +224,7 @@ class OpenAIProvider:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_fixed(3),
+        retry=retry_if_exception(_is_retryable),
         before_sleep=lambda retry_state: logger.warning(
             f"Retry request ({retry_state.attempt_number}/3) - "
             f"Wait 3 seconds - Exception: {retry_state.outcome.exception()}"
@@ -260,6 +293,7 @@ class OpenAIProvider:
                 },
             },
             temperature=kwargs.get("temperature", 0.1),
+            timeout=self._request_timeout,
         )
 
         self._response = response

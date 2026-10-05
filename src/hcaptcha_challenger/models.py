@@ -402,17 +402,6 @@ class ImageDragDropChallenge(BaseModel):
         bundle = {"Challenge Prompt": self.challenge_prompt, "Coordinates": str(_coordinates)}
         return json.dumps(bundle, indent=2, ensure_ascii=False)
 
-    def get_approximate_paths(self, bbox) -> List[SpatialPath]:
-        if len(self.paths) > 1:
-            return self.paths
-
-        path = self.paths[0]
-        start_x, start_y = path.start_point.x, path.start_point.y
-        if start_x > bbox["x"] + (bbox["width"] / 2) and start_y < bbox["y"] + (bbox["height"] / 2):
-            path.start_point.x = int(bbox["x"] + (bbox["width"] * 0.875))
-            path.start_point.y = int(bbox["y"] + (bbox["height"] * 0.393))
-        return [path]
-
 
 class SpatialBbox(BaseModel):
     top_left_x: int = Field(description="No more than 65% of width")
