@@ -52,10 +52,10 @@ def _create_adaptive_contrast_grid(
     img = image.copy()
 
     if isinstance(bbox, dict):
-        x, y = bbox['x'], bbox['y']
-        width, height = bbox['width'], bbox['height']
+        x, y = float(bbox['x']), float(bbox['y'])
+        width, height = float(bbox['width']), float(bbox['height'])
     else:
-        x, y, width, height = bbox
+        x, y, width, height = map(float, bbox)
 
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     avg_brightness = np.mean(gray) / 255
@@ -177,10 +177,10 @@ def create_coordinate_grid(
 
     # Extract bbox parameters
     if isinstance(bbox, dict):
-        x, y = bbox['x'], bbox['y']
-        width, height = bbox['width'], bbox['height']
+        x, y = float(bbox['x']), float(bbox['y'])
+        width, height = float(bbox['width']), float(bbox['height'])
     else:
-        x, y, width, height = bbox
+        x, y, width, height = map(float, bbox)
 
     # Create figure with size matching original image to maintain 1:1 pixel mapping
     figsize = _calculate_figsize(img)

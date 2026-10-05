@@ -1,8 +1,9 @@
 from pathlib import Path
 
+from loguru import logger
+
 from hcaptcha_challenger.helper import webm_to_mp4
 from hcaptcha_challenger.helper.webm_to_mp4 import check_ffmpeg
-from loguru import logger
 
 
 def test_webm_to_mp4():

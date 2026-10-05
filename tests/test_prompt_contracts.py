@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ACTIVE_PROMPTS = [
     Path("src/hcaptcha_challenger/tools/challenge_router/challenge_router.md"),
     Path("src/hcaptcha_challenger/tools/image_classifier/image_classifier.md"),
@@ -23,9 +22,9 @@ def test_active_prompts_are_non_empty():
 
 
 def test_router_prompt_keeps_all_enum_labels():
-    text = Path(
-        "src/hcaptcha_challenger/tools/challenge_router/challenge_router.md"
-    ).read_text(encoding="utf-8")
+    text = Path("src/hcaptcha_challenger/tools/challenge_router/challenge_router.md").read_text(
+        encoding="utf-8"
+    )
     for label in [
         "image_label_single_select",
         "image_label_multi_select",

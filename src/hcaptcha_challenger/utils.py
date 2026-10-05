@@ -53,7 +53,7 @@ def init_log(**sink_channel):
         level=log_level,
         format=stdout_format,
         diagnose=False,
-        filter=lambda record: record["time"].replace(tzinfo=pytz.UTC).astimezone(shanghai_tz),
+        filter=lambda record: bool(record["time"].replace(tzinfo=pytz.UTC).astimezone(shanghai_tz)),
     )
 
     if error_sink := sink_channel.get("error"):
@@ -64,7 +64,9 @@ def init_log(**sink_channel):
             retention="7 days",
             encoding="utf8",
             diagnose=False,
-            filter=lambda record: record["time"].replace(tzinfo=pytz.UTC).astimezone(shanghai_tz),
+            filter=lambda record: bool(
+                record["time"].replace(tzinfo=pytz.UTC).astimezone(shanghai_tz)
+            ),
         )
 
     if runtime_sink := sink_channel.get("runtime"):

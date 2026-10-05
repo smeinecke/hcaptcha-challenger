@@ -6,7 +6,7 @@ from loguru import logger
 from matplotlib import pyplot as plt
 
 from hcaptcha_challenger import SpatialBboxReasoner
-from hcaptcha_challenger.helper import create_coordinate_grid, FloatRect
+from hcaptcha_challenger.helper import FloatRect, create_coordinate_grid
 
 dotenv.load_dotenv()
 sbr = SpatialBboxReasoner(gemini_api_key=os.getenv("GEMINI_API_KEY"), model='gemini-2.5-flash')

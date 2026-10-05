@@ -273,12 +273,16 @@ def create_comparison_view(
     # Load images
     if isinstance(original_image, (str, Path)):
         orig_img = cv2.imread(str(original_image))
+        if orig_img is None:
+            raise ValueError(f"Failed to read image: {original_image}")
         orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
     else:
         orig_img = original_image.copy()
 
     if isinstance(coordinate_image, (str, Path)):
         coord_img = cv2.imread(str(coordinate_image))
+        if coord_img is None:
+            raise ValueError(f"Failed to read image: {coordinate_image}")
         coord_img = cv2.cvtColor(coord_img, cv2.COLOR_BGR2RGB)
     else:
         coord_img = coordinate_image.copy()

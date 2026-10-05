@@ -1,10 +1,9 @@
 import asyncio
 import json
 
-from playwright.async_api import async_playwright, Page
+from playwright.async_api import Page, async_playwright
 
-from hcaptcha_challenger import AgentV, AgentConfig, CaptchaResponse
-from hcaptcha_challenger import types
+from hcaptcha_challenger import AgentConfig, AgentV, CaptchaResponse, types
 from hcaptcha_challenger.utils import SiteKey
 
 

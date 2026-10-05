@@ -2,12 +2,16 @@ import os
 import random
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any
 
 import dotenv
 import pytest
 
-from hcaptcha_challenger import FastShotModelType, ChallengeClassifier, ChallengeTypeEnum
+from hcaptcha_challenger import (
+    ChallengeClassifier,
+    ChallengeTypeEnum,
+    FastShotModelType,
+)
 from hcaptcha_challenger.models import DEFAULT_FAST_SHOT_MODEL, ChallengeRouterResult
 from hcaptcha_challenger.tools.challenge_router import ChallengeRouter
 
@@ -17,7 +21,7 @@ dotenv.load_dotenv()
 # Test configuration
 TEST_MODEL: FastShotModelType = DEFAULT_FAST_SHOT_MODEL
 
-CHALLENGE_CONFIGURATIONS: List[Dict[str, Any]] = [
+CHALLENGE_CONFIGURATIONS: list[dict[str, Any]] = [
     {
         "dir_name": "image_drag_drop",
         "expected_map": {
@@ -145,9 +149,9 @@ async def test_challenge_classifier():
         groups[x]["single"]["samples"] = list(view_dir.rglob("single*"))
         groups[x]["multi"]["samples"] = list(view_dir.rglob("multi*"))
 
-    for g in groups:
-        for t in groups[g]:
-            s = random.choice(groups[g][t]["samples"])
+    for subs in groups.values():
+        for sub in subs.values():
+            s = random.choice(sub["samples"])
             result = await challenge_router(challenge_screenshot=s)
             assert result.challenge_prompt
-            assert result.challenge_type == groups[g][t]["type"]
+            assert result.challenge_type == sub["type"]

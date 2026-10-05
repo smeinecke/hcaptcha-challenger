@@ -1,0 +1,50 @@
+name: Code Checks
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Lint, Types & Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Cache Primes
+        id: cache-primes
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/uv
+          key: uv-cache-${{ hashFiles('**/pyproject.toml', '**/uv.lock') }}
+          restore-keys: |
+            uv-cache-
+
+      - name: Set up Python environment
+        run: |
+          wget -qO- https://astral.sh/uv/install.sh | sh
+          uv sync
+
+      - name: Run black (Formatting)
+        run: uv run make format
+
+      - name: Run Ruff (Linting)
+        run: uv run make check
+
+      - name: Run ty (Type Checking)
+        run: uv run make ty
+
+      - name: Run bandit (Security)
+        run: uv run make bandit
+
+      - name: Run pytest (Offline Unit Tests)
+        run: uv run make test

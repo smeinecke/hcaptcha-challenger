@@ -417,12 +417,16 @@ class RoboticArm:
         self._spatial_path_reasoner = SpatialPathReasoner(
             gemini_api_key=self._get_api_key(),
             model=self._get_model(self.config.SPATIAL_PATH_REASONER_MODEL),
-            provider=self._create_provider(self._get_model(self.config.SPATIAL_PATH_REASONER_MODEL)),
+            provider=self._create_provider(
+                self._get_model(self.config.SPATIAL_PATH_REASONER_MODEL)
+            ),
         )
         self._spatial_point_reasoner = SpatialPointReasoner(
             gemini_api_key=self._get_api_key(),
             model=self._get_model(self.config.SPATIAL_POINT_REASONER_MODEL),
-            provider=self._create_provider(self._get_model(self.config.SPATIAL_POINT_REASONER_MODEL)),
+            provider=self._create_provider(
+                self._get_model(self.config.SPATIAL_POINT_REASONER_MODEL)
+            ),
         )
         self._skill_manager = SkillManager(agent_config=config)
         self.signal_crumb_count: int | None = None
@@ -610,7 +614,11 @@ class RoboticArm:
             await challenge_view.screenshot(type="png", path=cache_path)
             router_result = await self._challenge_router(
                 challenge_screenshot=cache_path,
-                request_debug_path=cache_path.with_name(f"{cache_path.stem}_model_request.json") if self.config.enable_model_debug_caching else None,
+                request_debug_path=(
+                    cache_path.with_name(f"{cache_path.stem}_model_request.json")
+                    if self.config.enable_model_debug_caching
+                    else None
+                ),
             )
             self._challenge_prompt = router_result.challenge_prompt
             return router_result.challenge_type
@@ -933,7 +941,7 @@ class RoboticArm:
                 return true;
             }
             """,
-            [start_x, start_y, end_x, end_y]
+            [start_x, start_y, end_x, end_y],
         )
         await asyncio.sleep(0.2)
 
@@ -1039,7 +1047,7 @@ class RoboticArm:
                 return true;
             }
             """,
-            [start_x, start_y, end_x, end_y]
+            [start_x, start_y, end_x, end_y],
         )
         await asyncio.sleep(0.2)
 
@@ -1141,7 +1149,11 @@ class RoboticArm:
             # Image classification
             response = await self._image_classifier(
                 challenge_screenshot=challenge_screenshot,
-                request_debug_path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_request.json") if self.config.enable_model_debug_caching else None,
+                request_debug_path=(
+                    cache_key.joinpath(f"{cache_key.name}_{cid}_model_request.json")
+                    if self.config.enable_model_debug_caching
+                    else None
+                ),
             )
             boolean_matrix = response.convert_box_to_boolean_matrix()
 
@@ -1201,14 +1213,12 @@ class RoboticArm:
                 if is_compare_puzzle and question:
                     # Tube challenge keywords in the question
                     is_tube_by_question = any(
-                        kw in question.lower()
-                        for kw in ["pipe", "tube", "reach the other side"]
+                        kw in question.lower() for kw in ["pipe", "tube", "reach the other side"]
                     )
                     # All entities in the right-side panel → they are sources, not targets.
                     # Threshold is relative to image width (~right 30%).
                     entity_coords = [
-                        ent.coords for ent in task.entities
-                        if ent.coords and len(ent.coords) >= 1
+                        ent.coords for ent in task.entities if ent.coords and len(ent.coords) >= 1
                     ]
                     try:
                         img_w = Image.open(raw).size[0]
@@ -1222,7 +1232,9 @@ class RoboticArm:
                     is_tube_puzzle = is_tube_by_question or is_tube_by_position
                     if is_tube_puzzle:
                         is_compare_puzzle = False
-                        logger.debug(f"Detected tube/pipe puzzle: question='{question}', entities on right side")
+                        logger.debug(
+                            f"Detected tube/pipe puzzle: question='{question}', entities on right side"
+                        )
 
             # Enhance prompt when challenge has target entities with reference icons
             # Only do this for compare/matching puzzles (where entity_uri provides reference icons)
@@ -1244,8 +1256,7 @@ class RoboticArm:
                         )
                     else:
                         user_prompt += (
-                            f"\n\n注意：{entity_positions[0]}，"
-                            f"请拖放匹配的物体到该位置。"
+                            f"\n\n注意：{entity_positions[0]}，" f"请拖放匹配的物体到该位置。"
                         )
                     user_prompt += "\n".join(entity_positions)
                 logger.debug(f"Enhanced drag prompt for {entity_count} target entity(ies)")
@@ -1263,20 +1274,22 @@ class RoboticArm:
                         # targets; fall back to the left ~70% when coords are missing.
                         target_edges = [
                             ent.coords[0] + ent.size[0]
-                            for ent in task.entities
-                            if ent.coords and len(ent.coords) >= 2
-                            and ent.size and len(ent.size) >= 1
+                            for ent in task.entities or []
+                            if ent.coords
+                            and len(ent.coords) >= 2
+                            and ent.size
+                            and len(ent.size) >= 1
                         ]
                         crop_x = (
-                            min(width, max(target_edges) + 24)
-                            if target_edges
-                            else int(width * 0.7)
+                            min(width, max(target_edges) + 24) if target_edges else int(width * 0.7)
                         )
                         if width > crop_x:
                             cropped_img = img.crop((0, 0, crop_x, height))
                             cropped_raw = cache_key.joinpath(f"{cache_key.name}_{cid}_cropped.png")
                             cropped_img.save(cropped_raw)
-                            logger.debug(f"Cropped image from {width}x{height} to {crop_x}x{height}, saved to {cropped_raw}")
+                            logger.debug(
+                                f"Cropped image from {width}x{height} to {crop_x}x{height}, saved to {cropped_raw}"
+                            )
                     except Exception as e:  # noqa: BLE001
                         logger.warning(f"Failed to crop image: {e}, using original")
                         cropped_raw = raw
@@ -1322,7 +1335,11 @@ class RoboticArm:
                 grid_divisions=projection,
                 auxiliary_information=user_prompt,
                 extra_images=extra_images,
-                request_debug_path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_request.json") if self.config.enable_model_debug_caching else None,
+                request_debug_path=(
+                    cache_key.joinpath(f"{cache_key.name}_{cid}_model_request.json")
+                    if self.config.enable_model_debug_caching
+                    else None
+                ),
             )
             logger.debug(f'[{cid+1}/{crumb_count}]ToolInvokeMessage: {response.log_message}')
             if self.config.enable_model_debug_caching:
@@ -1347,9 +1364,7 @@ class RoboticArm:
             # Single-entity non-compare challenges ("drag the shape to the center"):
             # the sole entity IS the draggable → unconditional start correction.
             corrected_start = (
-                entity_centers[0]
-                if len(entity_centers) == 1 and not is_compare_puzzle
-                else None
+                entity_centers[0] if len(entity_centers) == 1 and not is_compare_puzzle else None
             )
             if corrected_start:
                 logger.debug(f"Entity correction: webpage_start={corrected_start}")
@@ -1377,9 +1392,7 @@ class RoboticArm:
                 if snapped_start:
                     path.start_point.x, path.start_point.y = snapped_start
                 if is_compare_puzzle:
-                    snapped_end = _nearest_entity_center(
-                        llm_end, entity_centers, snap_radius
-                    )
+                    snapped_end = _nearest_entity_center(llm_end, entity_centers, snap_radius)
                     if snapped_end and snapped_end != llm_end:
                         logger.debug(f"Snapped end {llm_end} -> {snapped_end}")
                         path.end_point.x, path.end_point.y = snapped_end
@@ -1410,8 +1423,7 @@ class RoboticArm:
                         challenge_screenshot=preview,
                         grid_divisions=projection,
                         auxiliary_information=(
-                            user_prompt
-                            + "\n\n图中已标出当前预测：绿色圆圈=起点，蓝色圆圈=终点，"
+                            user_prompt + "\n\n图中已标出当前预测：绿色圆圈=起点，蓝色圆圈=终点，"
                             "黄色连线=拖拽路径。请核对每条路径是否正确完成题目要求；"
                             "若正确请原样返回，若有偏差请返回修正后的 paths。"
                         ),
@@ -1505,7 +1517,11 @@ class RoboticArm:
                 challenge_screenshot=raw,
                 grid_divisions=projection,
                 auxiliary_information=user_prompt,
-                request_debug_path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_request.json") if self.config.enable_model_debug_caching else None,
+                request_debug_path=(
+                    cache_key.joinpath(f"{cache_key.name}_{cid}_model_request.json")
+                    if self.config.enable_model_debug_caching
+                    else None
+                ),
             )
             logger.debug(f'[{cid+1}/{crumb_count}]ToolInvokeMessage: {response.log_message}')
             if self.config.enable_model_debug_caching:
@@ -1690,7 +1706,9 @@ class AgentV:
                         raise ValueError("Empty tasklist for drag challenge")
                     entities = tasklist[0].entities or []
                     entity_count = len(entities)
-                    logger.debug(f"IMAGE_DRAG_DROP: tasklist_len={tasklist_length}, entities={entity_count}")
+                    logger.debug(
+                        f"IMAGE_DRAG_DROP: tasklist_len={tasklist_length}, entities={entity_count}"
+                    )
                     return (
                         ChallengeTypeEnum.IMAGE_DRAG_SINGLE
                         if entity_count == 1

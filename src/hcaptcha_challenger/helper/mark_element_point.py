@@ -38,7 +38,9 @@ def mark_points_on_image(
         # Generate a unique color for each point using HSV color space
         # This ensures good color distribution and visibility
         hue = (i * 30) % 180  # Rotate through hues, avoiding similar adjacent colors
-        color = cv2.cvtColor(np.uint8([[[hue, 255, 255]]]), cv2.COLOR_HSV2BGR)[0][0].tolist()
+        color = cv2.cvtColor(np.asarray([[[hue, 255, 255]]], dtype=np.uint8), cv2.COLOR_HSV2BGR)[0][
+            0
+        ].tolist()
 
         # Draw a filled circle at the point
         cv2.circle(image, (x, y), point_radius, color, -1)  # -1 means filled

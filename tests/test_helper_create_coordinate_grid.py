@@ -1,13 +1,16 @@
 import itertools
 import logging
 import os
-from concurrent.futures import as_completed, ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from hcaptcha_challenger.helper.create_coordinate_grid import create_coordinate_grid, FloatRect
+from hcaptcha_challenger.helper.create_coordinate_grid import (
+    FloatRect,
+    create_coordinate_grid,
+)
 
 BASE_PATH = Path(__file__).parent.joinpath("challenge_view")
 DATASET_IMAGE_DRAG_DROP = BASE_PATH / "image_drag_drop"
@@ -19,6 +22,7 @@ DATASET_IMAGE_LABEL_AREA_SELECT.mkdir(parents=True, exist_ok=True)
 DEFAULT_BBOX = FloatRect(x=0, y=0, width=501, height=431)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 PREFIX_ = "coordinate_grid"
 PIL_AVAILABLE = True
@@ -52,7 +56,7 @@ def process_and_save_grid(challenge_screenshot: Path, bbox: FloatRect):
                     result_data = (result_data * 255).astype(np.uint8)
                 else:
                     # Other situations may require more complex normalization or type conversion
-                    logging.warning(
+                    logger.warning(
                         f"Result data for {challenge_screenshot.name} has dtype {result_data.dtype}. Attempting direct conversion to uint8."
                     )
                     # May be inaccurate, depending on the original range
@@ -61,19 +65,19 @@ def process_and_save_grid(challenge_screenshot: Path, bbox: FloatRect):
             # Save NumPy arrays using Pillow
             img = Image.fromarray(result_data)
             img.save(grid_divisions_path)
-            logging.info(f"Saved grid image to: {grid_divisions_path} using Pillow")
+            logger.info(f"Saved grid image to: {grid_divisions_path} using Pillow")
         else:
-            logging.error(
+            logger.error(
                 f"Processing failed for {challenge_screenshot.name}: create_coordinate_grid did not return a NumPy array."
             )
 
     except FileNotFoundError:
-        logging.error(f"Input image not found: {challenge_screenshot}")
-    except Exception as e:
-        logging.error(f"Failed to process {challenge_screenshot.name}: {e}", exc_info=True)
+        logger.error(f"Input image not found: {challenge_screenshot}")
+    except Exception:
+        logger.exception(f"Failed to process {challenge_screenshot.name}")
 
 
-def test_create_coordinate_grid_parallel(max_workers: int = None):
+def test_create_coordinate_grid_parallel(max_workers: int | None = None):
     """
     Find all the challenge screenshots, process and save the coordinate grid image in parallel.
 
@@ -81,13 +85,13 @@ def test_create_coordinate_grid_parallel(max_workers: int = None):
         max_workers: The maximum number of processes to be used. The default is the number of CPU cores of the system.
     """
     if not PIL_AVAILABLE:
-        logging.warning(
+        logger.warning(
             "Consider installing Pillow (`pip install Pillow`) for potentially better performance and reduced dependencies."
         )
 
     if max_workers is None:
         max_workers = os.cpu_count()
-        logging.info(f"Using default max_workers: {max_workers}")
+        logger.info(f"Using default max_workers: {max_workers}")
 
     # Get a list of all image paths (parallel processing usually requires collecting all tasks first)
     all_image_paths = list(
@@ -99,10 +103,10 @@ def test_create_coordinate_grid_parallel(max_workers: int = None):
     valid_image_paths = [
         p for p in all_image_paths if p.is_file() and not p.name.startswith(PREFIX_)
     ]
-    logging.info(f"Found {len(valid_image_paths)} image files to process.")
+    logger.info(f"Found {len(valid_image_paths)} image files to process.")
 
     if not valid_image_paths:
-        logging.warning("No valid image files found.")
+        logger.warning("No valid image files found.")
         return
 
     processed_count = 0
@@ -123,12 +127,12 @@ def test_create_coordinate_grid_parallel(max_workers: int = None):
                 future.result()  # Check whether the task throws an exception
                 processed_count += 1
                 # You can add more detailed success logs here, but there are logs inside process_and_save_grid
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 # The exception has been recorded in process_and_save_grid.
                 # You can record it again or take other measures here.
-                logging.error(f"Error processing {img_path} in parallel worker: {e}")
+                logger.error(f"Error processing {img_path} in parallel worker: {e}")
 
-    logging.info(
+    logger.info(
         f"Finished parallel processing. Processed {processed_count}/{len(valid_image_paths)} images."
     )
 

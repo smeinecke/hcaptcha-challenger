@@ -45,9 +45,7 @@ class ImageClassifier(Reasoner[SCoTModelType, ImageBinaryChallenge]):
     ):
         super().__init__(gemini_api_key, model, provider=provider, **kwargs)
 
-    async def __call__(
-        self, *, challenge_screenshot: str | Path, **kwargs
-    ) -> ImageBinaryChallenge:
+    async def __call__(self, *, challenge_screenshot: str | Path, **kwargs) -> ImageBinaryChallenge:
         """
         Analyze a 9-grid challenge and return the solution coordinates.
 

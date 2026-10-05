@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
 """Offline unit tests for drag-drop accuracy helpers (no API calls)."""
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,6 +29,7 @@ class _Task:
 
 
 CENTERS = [(470, 100), (470, 191), (470, 282)]
+BBOX = {"x": 50.0, "y": 100.0}
 
 
 class TestNearestEntityCenter:
@@ -52,26 +53,22 @@ class TestNearestEntityCenter:
 
 
 class TestEntityCentersWebpage:
-    BBOX = {"x": 50.0, "y": 100.0}
-
     def test_top_left_to_center_conversion(self):
         task = _Task([_Entity([436, 74], [64, 52])])
-        assert _entity_centers_webpage(task, self.BBOX) == [(518, 200)]
+        assert _entity_centers_webpage(task, BBOX) == [(518, 200)]
 
     def test_multiple_entities(self):
-        task = _Task(
-            [_Entity([436, 74], [64, 52]), _Entity([436, 256], [64, 52])]
-        )
-        assert _entity_centers_webpage(task, self.BBOX) == [(518, 200), (518, 382)]
+        task = _Task([_Entity([436, 74], [64, 52]), _Entity([436, 256], [64, 52])])
+        assert _entity_centers_webpage(task, BBOX) == [(518, 200), (518, 382)]
 
     def test_missing_geometry_skipped(self):
         task = _Task([_Entity(None, [64, 52]), _Entity([436, 74], None)])
-        assert _entity_centers_webpage(task, self.BBOX) == []
+        assert _entity_centers_webpage(task, BBOX) == []
 
     def test_no_bbox_or_task(self):
         task = _Task([_Entity([436, 74], [64, 52])])
         assert _entity_centers_webpage(task, None) == []
-        assert _entity_centers_webpage(None, self.BBOX) == []
+        assert _entity_centers_webpage(None, BBOX) == []
 
 
 def _status_err(code: int) -> APIStatusError:

@@ -2,16 +2,16 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
-from playwright.async_api import async_playwright
 from playwright._impl._errors import TargetClosedError
+from playwright.async_api import async_playwright
 
-from hcaptcha_challenger import AgentV, AgentConfig
+from hcaptcha_challenger import AgentConfig, AgentV
 from hcaptcha_challenger.helper import inject_mouse_visualizer_global
 from hcaptcha_challenger.utils import SiteKey
 
 
 async def main():
-    record_dir = Path("tmp/.cache/record") / datetime.now().strftime("%Y%m%d_%H%M%S")
+    record_dir = Path("tmp/.cache/record") / datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
     record_dir.mkdir(parents=True, exist_ok=True)
 
     async with async_playwright() as p:

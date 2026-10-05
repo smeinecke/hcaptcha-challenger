@@ -12,5 +12,5 @@ def test_create_comparison_image():
 
         array_filename = f"{input_path.stem}_cmp.png"
         array_path = input_path.parent.joinpath(array_filename)
-        array_image, _ = create_comparison_image(input_path, 135)
+        _array_image, _ = create_comparison_image(input_path, 135)
         print(f"Array plot saved to: {array_path}")

@@ -11,9 +11,7 @@ from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
-def generate_env_example(
-    config_class: type[BaseSettings], output_dir: Path | None = None
-) -> Path:
+def generate_env_example(config_class: type[BaseSettings], output_dir: Path | None = None) -> Path:
     """
     Generate a .env.example file based on a pydantic BaseSettings class.
 

@@ -184,7 +184,10 @@ class OpenAIProvider:
                             msg_copy["content"].append(
                                 {
                                     "type": "image_url",
-                                    "image_url": {"url": f"{mime},{truncated_b64}", "detail": item["image_url"].get("detail", "high")},
+                                    "image_url": {
+                                        "url": f"{mime},{truncated_b64}",
+                                        "detail": item["image_url"].get("detail", "high"),
+                                    },
                                 }
                             )
                         else:
@@ -210,13 +213,17 @@ class OpenAIProvider:
                 }
                 for choice in response.choices
             ],
-            "usage": {
-                "prompt_tokens": response.usage.prompt_tokens if response.usage else None,
-                "completion_tokens": response.usage.completion_tokens if response.usage else None,
-                "total_tokens": response.usage.total_tokens if response.usage else None,
-            }
-            if response.usage
-            else None,
+            "usage": (
+                {
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else None,
+                    "completion_tokens": (
+                        response.usage.completion_tokens if response.usage else None
+                    ),
+                    "total_tokens": response.usage.total_tokens if response.usage else None,
+                }
+                if response.usage
+                else None
+            ),
         }
         logger.info(f"OpenAI API Response:\n{json.dumps(log_data, indent=2, ensure_ascii=False)}")
 
@@ -314,7 +321,9 @@ class OpenAIProvider:
                 json_data = extract_first_json_block(content_text)
                 if json_data:
                     return response_schema(**json_data)
-                raise ValueError("Failed to parse JSON response: content was not valid JSON or markdown-wrapped JSON")
+                raise ValueError(
+                    "Failed to parse JSON response: content was not valid JSON or markdown-wrapped JSON"
+                )
 
         raise ValueError("Empty response from API")
 
@@ -335,9 +344,7 @@ class OpenAIProvider:
                     }
                     for choice in self._response.choices
                 ],
-                "usage": self._response.usage.model_dump()
-                if self._response.usage
-                else None,
+                "usage": self._response.usage.model_dump() if self._response.usage else None,
             }
             path.write_text(
                 json.dumps(cache_data, indent=2, ensure_ascii=False),

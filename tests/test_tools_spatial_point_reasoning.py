@@ -8,7 +8,7 @@ from loguru import logger
 from matplotlib import pyplot as plt
 
 from hcaptcha_challenger import SpatialPointReasoner
-from hcaptcha_challenger.helper import create_coordinate_grid, FloatRect
+from hcaptcha_challenger.helper import FloatRect, create_coordinate_grid
 from hcaptcha_challenger.helper.visualize_attention_points import show_answer_points
 
 dotenv.load_dotenv()

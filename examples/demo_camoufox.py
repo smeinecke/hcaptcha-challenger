@@ -6,7 +6,7 @@ from browserforge.fingerprints import Screen
 from camoufox import AsyncCamoufox
 from playwright.async_api import Page
 
-from hcaptcha_challenger import AgentV, AgentConfig, CaptchaResponse
+from hcaptcha_challenger import AgentConfig, AgentV, CaptchaResponse
 from hcaptcha_challenger.utils import SiteKey
 
 

@@ -7,13 +7,14 @@ This demonstrates how to use the modular LLM backend with any OpenAI-compatible 
 import asyncio
 import json
 
+from dotenv import load_dotenv
 from playwright.async_api import Page, async_playwright
 
 from hcaptcha_challenger import AgentConfig, AgentV, CaptchaResponse
 from hcaptcha_challenger.utils import SiteKey
-from dotenv import load_dotenv
 
 load_dotenv()
+
 
 async def challenge_with_openrouter(page: Page) -> AgentV:
     """Automates the process of solving an hCaptcha challenge using OpenRouter.
@@ -88,9 +89,7 @@ async def main():
 
         if agent.cr_list:
             cr: CaptchaResponse = agent.cr_list[-1]
-            print(
-                json.dumps(cr.model_dump(by_alias=True), indent=2, ensure_ascii=False)
-            )
+            print(json.dumps(cr.model_dump(by_alias=True), indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

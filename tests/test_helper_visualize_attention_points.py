@@ -9,9 +9,9 @@ import pytest
 
 from hcaptcha_challenger.helper.create_coordinate_grid import FloatRect
 from hcaptcha_challenger.helper.visualize_attention_points import (
-    show_answer_points,
-    create_comparison_view,
     _parse_answer_dict,
+    create_comparison_view,
+    show_answer_points,
 )
 from hcaptcha_challenger.models import (
     ImageAreaSelectChallenge,
