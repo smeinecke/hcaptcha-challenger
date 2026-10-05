@@ -205,7 +205,9 @@ class Collector:
         Returns: ./dataset / require_type / prompt / current_time
 
         """
-        request_type = captcha_payload.request_type.value
+        request_type = (
+            captcha_payload.request_type.value if captcha_payload.request_type else "unknown"
+        )
         prompt = captcha_payload.get_requester_question()
         # Prompts can contain newlines/whitespace that make unusable dir names
         prompt = " ".join(prompt.split()).translate(str.maketrans("", "", "".join(INV)))
@@ -349,6 +351,15 @@ class Collector:
                 )
             except asyncio.TimeoutError:
                 logger.error("Wait for captcha payload to timeout")
+                continue
+
+            # Skip known request types outside focus_types; payloads with an
+            # unrecognized/absent type are still captured under "unknown/".
+            if (
+                captcha_payload.request_type is not None
+                and captcha_payload.request_type not in self.config.focus_types
+            ):
+                logger.debug(f"Skip non-focus type: {captcha_payload.request_type}")
                 continue
 
             # Download Images
