@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 SpatialReasoner - Base class for spatial reasoning tools.
 
@@ -8,7 +7,7 @@ spatial reasoning tools (path, point, bbox).
 
 from abc import ABC
 from pathlib import Path
-from typing import TypeVar, List
+from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -35,7 +34,7 @@ class SpatialReasoner(Reasoner[SCoTModelType, ResponseT], ABC):
         grid_divisions: Path,
         auxiliary_information: str | None = None,
         response_schema: type[ResponseT],
-        extra_images: List[Path] | None = None,
+        extra_images: list[Path] | None = None,
         **kwargs,
     ) -> ResponseT:
         """
@@ -54,7 +53,7 @@ class SpatialReasoner(Reasoner[SCoTModelType, ResponseT], ABC):
         Returns:
             Parsed response matching the response_schema.
         """
-        images: List[Path] = [challenge_screenshot, grid_divisions]
+        images: list[Path] = [challenge_screenshot, grid_divisions]
         if extra_images:
             images.extend(extra_images)
 

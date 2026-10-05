@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 SpatialBboxReasoner - Bounding box challenge solver.
 
@@ -7,7 +6,6 @@ for the target area that fulfills the challenge requirements.
 """
 
 from pathlib import Path
-from typing import Union
 
 from hcaptcha_challenger.models import ImageBboxChallenge
 from hcaptcha_challenger.tools.spatial.base import SpatialReasoner
@@ -30,8 +28,8 @@ class SpatialBboxReasoner(SpatialReasoner[ImageBboxChallenge]):
     async def __call__(
         self,
         *,
-        challenge_screenshot: Union[str, Path],
-        grid_divisions: Union[str, Path],
+        challenge_screenshot: str | Path,
+        grid_divisions: str | Path,
         auxiliary_information: str | None = None,
         **kwargs,
     ) -> ImageBboxChallenge:

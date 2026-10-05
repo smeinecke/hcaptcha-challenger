@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Union
 
 from playwright.async_api import Page as AsyncPage
 from playwright.sync_api import Page as SyncPage
@@ -28,7 +27,7 @@ def inject_mouse_visualizer_global_sync(page: SyncPage):
     page.evaluate(script)
 
 
-async def inject_mouse_visualizer_global(page: Union[SyncPage, AsyncPage]):
+async def inject_mouse_visualizer_global(page: SyncPage | AsyncPage):
     """
     Inject mouse position visualizations into the Playwright page, supporting synchronous and asynchronous APIs.
 

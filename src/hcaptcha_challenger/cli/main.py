@@ -2,8 +2,7 @@ import sys
 
 import typer
 
-from hcaptcha_challenger.cli import dataset
-from hcaptcha_challenger.cli import solver
+from hcaptcha_challenger.cli import dataset, solver
 from hcaptcha_challenger.utils import SiteKey
 
 # Create top-level application
@@ -28,7 +27,7 @@ def main_callback(ctx: typer.Context):
 @app.command(name="help", help="Show help for a specific command.")
 def help_command(
     ctx: typer.Context,
-    command_path: list[str] = typer.Argument(
+    command_path: list[str] = typer.Argument(  # noqa: B008
         None, help="The command path (e.g., 'dataset collect')."
     ),
 ):
@@ -70,7 +69,7 @@ def help_command(
             except SystemExit:
                 # Typer will exit after showing help
                 return
-            except Exception:
+            except Exception:  # noqa: BLE001
                 print(f"Error: Command '{cmd}' not found")
                 raise typer.Exit(code=1)
 

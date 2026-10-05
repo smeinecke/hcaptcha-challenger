@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Union, TypedDict, Tuple, List
+from typing import TypedDict
 
 import cv2
 import matplotlib.pyplot as plt
@@ -13,7 +13,7 @@ class FloatRect(TypedDict):
     height: float
 
 
-def _calculate_figsize(img: np.ndarray, dpi: int = 100) -> Tuple[float, float]:
+def _calculate_figsize(img: np.ndarray, dpi: int = 100) -> tuple[float, float]:
     """
     Calculate figure size in inches to maintain original image pixel dimensions.
 
@@ -30,7 +30,7 @@ def _calculate_figsize(img: np.ndarray, dpi: int = 100) -> Tuple[float, float]:
 
 def _create_adaptive_contrast_grid(
     image: np.ndarray,
-    bbox: Union[FloatRect, Tuple[float, float, float, float], List[float]],
+    bbox: FloatRect | tuple[float, float, float, float] | list[float],
     *,
     x_line_space_num: int = 11,
     y_line_space_num: int = 20,
@@ -132,8 +132,8 @@ def _create_adaptive_contrast_grid(
 
 
 def create_coordinate_grid(
-    image: Union[str, np.ndarray, Path],
-    bbox: Union[FloatRect, Tuple[float, float, float, float], List[float]],
+    image: str | np.ndarray | Path,
+    bbox: FloatRect | tuple[float, float, float, float] | list[float],
     *,
     x_line_space_num: int = 11,
     y_line_space_num: int = 20,

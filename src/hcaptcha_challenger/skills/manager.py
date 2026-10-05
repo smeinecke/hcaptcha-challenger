@@ -5,7 +5,13 @@ from typing import TYPE_CHECKING
 import httpx
 import yaml
 from loguru import logger
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+)
 
 from hcaptcha_challenger.models import ChallengeTypeEnum
 from hcaptcha_challenger.skills.schema import SkillManifest, SkillRule
@@ -88,14 +94,14 @@ class SkillManager:
                 self._load_rules(self._cache_rules_path)
                 logger.debug(f"Loaded cached skills from {self._cache_rules_path}")
                 return
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to load cached skills: {e}. Falling back to built-in.")
 
         # 3. Built-in (Final fallback)
         try:
             self._load_rules(self._builtin_rules_path)
             # logger.debug(f"Loaded built-in skills from {self._builtin_rules_path}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to load built-in skills: {e}")
             self._rules = []
 
@@ -156,9 +162,8 @@ class SkillManager:
 
         def matches(rule: SkillRule) -> bool:
             # Job type filter: if rule specifies job_type, it must match
-            if rule.job_type:
-                if not job_type_value or rule.job_type != job_type_value:
-                    return False
+            if rule.job_type and (not job_type_value or rule.job_type != job_type_value):
+                return False
             # Trigger matching using pre-computed lowercase triggers
             return rule.matches_text(text_lower)
 
@@ -183,7 +188,7 @@ class SkillManager:
 
             logger.warning(f"Template file not found: {file_path}")
             return ""
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error loading template {filename}: {e}")
             return ""
 
@@ -236,7 +241,7 @@ class SkillManager:
                 self._template_cache.clear()
                 logger.info(f"Skills updated to version {remote_manifest.version}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to update skills: {e}")
 
     @staticmethod
@@ -247,7 +252,7 @@ class SkillManager:
             resp.raise_for_status()
             data = yaml.safe_load(resp.text)
             return SkillManifest(**data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to download manifest: {e}")
             return None
 
@@ -272,7 +277,7 @@ class SkillManager:
                     resp = await client.get(template_url, timeout=5.0)
                     resp.raise_for_status()
                     template_dest.write_text(resp.text, encoding="utf-8")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"Failed to download template {rule.template}: {e}")
 
                 progress.update(task, advance=1, description=f"[cyan]Downloaded {rule.template}")

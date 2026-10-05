@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Union
 
 import cv2
 import numpy as np
@@ -8,7 +7,7 @@ from hcaptcha_challenger.models import PointCoordinate
 
 
 def refine_click_point(
-    image: Union[str, Path],
+    image: str | Path,
     point: PointCoordinate,
     *,
     window_radius: int = 80,

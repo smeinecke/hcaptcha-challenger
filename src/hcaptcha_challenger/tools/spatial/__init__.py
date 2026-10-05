@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
 # Spatial reasoning tools for hCaptcha challenges.
 
+from .bbox import SpatialBboxReasoner
 from .path import SpatialPathReasoner
 from .point import SpatialPointReasoner
-from .bbox import SpatialBboxReasoner
 
-__all__ = ["SpatialPathReasoner", "SpatialPointReasoner", "SpatialBboxReasoner"]
+__all__ = ["SpatialBboxReasoner", "SpatialPathReasoner", "SpatialPointReasoner"]

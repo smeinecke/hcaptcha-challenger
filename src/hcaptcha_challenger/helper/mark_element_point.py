@@ -1,16 +1,15 @@
 from pathlib import Path
-from typing import List, Tuple, Union, Optional
 
 import cv2
 import numpy as np
 
 
 def mark_points_on_image(
-    image_path: Union[str, Path],
-    points: List[Tuple[int, int]],
-    output_path: Optional[Union[str, Path]] = None,
+    image_path: str | Path,
+    points: list[tuple[int, int]],
+    output_path: str | Path | None = None,
     point_radius: int = 5,
-    text_offset: Tuple[int, int] = (10, 5),
+    text_offset: tuple[int, int] = (10, 5),
     text_scale: float = 0.5,
     text_thickness: int = 1,
 ) -> np.ndarray:

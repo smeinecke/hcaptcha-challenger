@@ -6,7 +6,7 @@ import json
 import pathlib
 from collections import defaultdict
 from statistics import median
-from typing import TypedDict, List, Dict, Union, Optional
+from typing import TypedDict
 
 from google.genai import types
 from pydantic import BaseModel, Field
@@ -25,7 +25,7 @@ class CostItem(TypedDict):
 
 
 # fmt:off
-model_cost_list: List[CostItem] = [
+model_cost_list: list[CostItem] = [
     # == Paid Plan == #
     CostItem(model="gemini-2.5-pro-preview-03-25", input_price=1.25, output_price=10.0, unit=UNIT_1_M),
     CostItem(model="gemini-2.5-flash-preview-04-17", input_price=0.15, output_price=3.50, unit=UNIT_1_M),
@@ -51,11 +51,11 @@ class ModelUsageStats(BaseModel):
     total_cost: float = Field(default=0.000, description="Total cost in USD (rounded to 3 decimal places)")
     average_cost_per_challenge: float = Field(default=0.000, description="Average cost per challenge in USD (3 decimal places)")
     median_cost_per_challenge: float = Field(default=0.000, description="Median cost per challenge in USD (3 decimal places)")
-    model_details: Dict[str, Dict[str, float]] = Field(default_factory=dict, description="Cost details by model")
-    challenge_costs: List[float] = Field(default_factory=list, description="List of costs for each challenge")
+    model_details: dict[str, dict[str, float]] = Field(default_factory=dict, description="Cost details by model")
+    challenge_costs: list[float] = Field(default_factory=list, description="List of costs for each challenge")
     # fmt:on
 
-    def save_to_json(self, file_path: Union[str, pathlib.Path]) -> None:
+    def save_to_json(self, file_path: str | pathlib.Path) -> None:
         """Save stats to a JSON file"""
         file_path = pathlib.Path(file_path)
 
@@ -67,7 +67,7 @@ class ModelUsageStats(BaseModel):
         data["average_cost_per_challenge"] = round(data["average_cost_per_challenge"], 3)
         data["median_cost_per_challenge"] = round(data["median_cost_per_challenge"], 3)
 
-        for model_name, model_data in data["model_details"].items():
+        for model_data in data["model_details"].values():
             for cost_key in ["input_cost", "output_cost", "total_cost"]:
                 if cost_key in model_data:
                     model_data[cost_key] = round(model_data[cost_key], 3)
@@ -80,8 +80,8 @@ class ModelUsageStats(BaseModel):
 
 
 def calculate_model_cost(
-    challenge_path: Union[str, pathlib.Path], detailed: bool = False
-) -> Union[float, ModelUsageStats]:
+    challenge_path: str | pathlib.Path, detailed: bool = False
+) -> float | ModelUsageStats:
     """
     Calculate the cost of model usage for all challenges in the specified path
 
@@ -168,7 +168,7 @@ def calculate_model_cost(
                 )
                 stats.model_details[model_name]["usage_count"] += 1
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Error processing file {item_file}: {e}")
 
     # Calculate challenge statistics
@@ -190,7 +190,7 @@ def calculate_model_cost(
 
 
 def export_stats(
-    challenge_path: Union[str, pathlib.Path], output_file: Optional[Union[str, pathlib.Path]] = None
+    challenge_path: str | pathlib.Path, output_file: str | pathlib.Path | None = None
 ) -> ModelUsageStats:
     """
     Calculate and export detailed statistics for model usage
@@ -206,7 +206,7 @@ def export_stats(
 
     if isinstance(stats, float):
         # This shouldn't happen as we specified detailed=True
-        raise ValueError("Failed to generate detailed statistics")
+        raise TypeError("Failed to generate detailed statistics")
 
     # Type assertion for type checker after isinstance check
     assert isinstance(stats, ModelUsageStats)

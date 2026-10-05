@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Time       : 2022/2/15 17:43
 # Author     : QIN2DIM
 # GitHub     : https://github.com/QIN2DIM
@@ -8,39 +7,41 @@ from __future__ import annotations
 from pathlib import Path
 
 from hcaptcha_challenger import models as types
-from hcaptcha_challenger.agent.challenger import AgentV, AgentConfig
+from hcaptcha_challenger.agent.challenger import AgentConfig, AgentV
 from hcaptcha_challenger.agent.collector import Collector, CollectorConfig
 from hcaptcha_challenger.models import (
-    RequestType,
     CaptchaResponse,
     ChallengeTypeEnum,
-    FastShotModelType,
-    SCoTModelType,
     CoordinateGrid,
+    FastShotModelType,
+    RequestType,
+    SCoTModelType,
 )
-from hcaptcha_challenger.tools import ChallengeClassifier
-from hcaptcha_challenger.tools import ImageClassifier
-from hcaptcha_challenger.tools import SpatialBboxReasoner
-from hcaptcha_challenger.tools import SpatialPathReasoner
-from hcaptcha_challenger.tools import SpatialPointReasoner
+from hcaptcha_challenger.tools import (
+    ChallengeClassifier,
+    ImageClassifier,
+    SpatialBboxReasoner,
+    SpatialPathReasoner,
+    SpatialPointReasoner,
+)
 from hcaptcha_challenger.utils import init_log
 
 __all__ = [
-    "ChallengeTypeEnum",
-    "FastShotModelType",
-    "SCoTModelType",
-    "CoordinateGrid",
-    "RequestType",
-    "AgentV",
     "AgentConfig",
-    "ImageClassifier",
-    'ChallengeClassifier',
-    'SpatialPathReasoner',
-    'SpatialPointReasoner',
-    'SpatialBboxReasoner',
+    "AgentV",
     "CaptchaResponse",
+    'ChallengeClassifier',
+    "ChallengeTypeEnum",
     "Collector",
     "CollectorConfig",
+    "CoordinateGrid",
+    "FastShotModelType",
+    "ImageClassifier",
+    "RequestType",
+    "SCoTModelType",
+    'SpatialBboxReasoner',
+    'SpatialPathReasoner',
+    'SpatialPointReasoner',
     "types",
 ]
 

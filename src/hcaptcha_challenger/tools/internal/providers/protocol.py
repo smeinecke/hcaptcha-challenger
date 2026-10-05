@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 ChatProvider Protocol - Abstract interface for LLM providers.
 
@@ -13,7 +12,7 @@ Future implementations:
 """
 
 from pathlib import Path
-from typing import Protocol, TypeVar, runtime_checkable, List
+from typing import Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -31,7 +30,7 @@ class ChatProvider(Protocol[ResponseT]):
     async def generate_with_images(
         self,
         *,
-        images: List[Path],
+        images: list[Path],
         response_schema: type[ResponseT],
         user_prompt: str | None = None,
         description: str | None = None,

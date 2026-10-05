@@ -6,8 +6,8 @@ class ArmorException(Exception):
 
     def __init__(
         self,
-        msg: typing.Optional[str] = None,
-        stacktrace: typing.Optional[typing.Sequence[str]] = None,
+        msg: str | None = None,
+        stacktrace: typing.Sequence[str] | None = None,
     ):
         self.msg = msg
         self.stacktrace = stacktrace

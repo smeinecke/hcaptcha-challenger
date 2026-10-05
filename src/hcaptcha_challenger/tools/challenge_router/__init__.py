@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 ChallengeRouter - Challenge type classification tool.
 
@@ -8,12 +7,11 @@ the challenge prompt.
 """
 
 from pathlib import Path
-from typing import Union
 
 from hcaptcha_challenger.models import (
-    FastShotModelType,
-    ChallengeRouterResult,
     DEFAULT_FAST_SHOT_MODEL,
+    ChallengeRouterResult,
+    FastShotModelType,
 )
 from hcaptcha_challenger.tools.internal.base import Reasoner
 from hcaptcha_challenger.tools.internal.providers.protocol import ChatProvider
@@ -44,7 +42,7 @@ class ChallengeRouter(Reasoner[FastShotModelType, ChallengeRouterResult]):
         super().__init__(gemini_api_key, model, provider=provider, **kwargs)
 
     async def __call__(
-        self, *, challenge_screenshot: Union[str, Path], **kwargs
+        self, *, challenge_screenshot: str | Path, **kwargs
     ) -> ChallengeRouterResult:
         """
         Classify a challenge screenshot and extract its prompt.

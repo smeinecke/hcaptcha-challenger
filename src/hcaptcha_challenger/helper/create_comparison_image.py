@@ -1,7 +1,6 @@
 import math
 from io import BytesIO
 from pathlib import Path
-from typing import Union, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -84,10 +83,10 @@ def draw_xyz_coordinate_system(
     # 添加轴标签
     try:
         font = ImageFont.truetype("arial.ttf", int(radius * 0.14))
-    except IOError:
+    except OSError:
         try:
             font = ImageFont.truetype("DejaVuSans.ttf", int(radius * 0.14))
-        except IOError:
+        except OSError:
             font = ImageFont.load_default()
 
     label_offset = int(radius * 0.12)
@@ -163,8 +162,8 @@ def draw_xyz_coordinate_system(
 
 
 def create_comparison_image(
-    image_source: Union[str, bytes, Path], reference_width: int = None
-) -> Tuple[Image.Image, Image.Image]:
+    image_source: str | bytes | Path, reference_width: int | None = None
+) -> tuple[Image.Image, Image.Image]:
     """
     Create a display image with coordinate system from a wide-format input image.
 
@@ -235,7 +234,7 @@ def create_comparison_image(
         try:
             sub_img = img.crop(box)
             array_images.append(sub_img)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"裁切顶部子图 {i} 时出错: {e}")
             raise ValueError(f"无法裁切顶部子图 {i}")
 
@@ -244,7 +243,7 @@ def create_comparison_image(
         ref_box = (0, sub_image_height, min(reference_width, original_width), original_height)
         try:
             reference_image = img.crop(ref_box)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"裁切参考图像时出错: {e}")
             # 出错时创建一个空白的参考图像
             reference_image = Image.new(
@@ -277,13 +276,13 @@ def create_comparison_image(
         # 尝试使用常见字体，或者提供 .ttf 文件路径
         font_labels = ImageFont.truetype("arial.ttf", font_size_labels)
         font_indices = ImageFont.truetype("arial.ttf", font_size_indices)
-    except IOError:
+    except OSError:
         print("警告：找不到 Arial 字体，将使用默认字体。标签可能看起来不同。")
         try:
             # 尝试其他常见字体 (例如 DejaVu Sans)
             font_labels = ImageFont.truetype("DejaVuSans.ttf", font_size_labels)
             font_indices = ImageFont.truetype("DejaVuSans.ttf", font_size_indices)
-        except IOError:
+        except OSError:
             font_labels = ImageFont.load_default()
             font_indices = ImageFont.load_default()
 

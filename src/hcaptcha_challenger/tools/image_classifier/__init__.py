@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 ImageClassifier - 9-grid image classification challenge solver.
 
@@ -7,9 +6,12 @@ cells should be selected based on the challenge prompt.
 """
 
 from pathlib import Path
-from typing import Union
 
-from hcaptcha_challenger.models import SCoTModelType, ImageBinaryChallenge, DEFAULT_SCOT_MODEL
+from hcaptcha_challenger.models import (
+    DEFAULT_SCOT_MODEL,
+    ImageBinaryChallenge,
+    SCoTModelType,
+)
 from hcaptcha_challenger.tools.internal.base import Reasoner
 from hcaptcha_challenger.tools.internal.providers.protocol import ChatProvider
 from hcaptcha_challenger.utils import load_desc
@@ -44,7 +46,7 @@ class ImageClassifier(Reasoner[SCoTModelType, ImageBinaryChallenge]):
         super().__init__(gemini_api_key, model, provider=provider, **kwargs)
 
     async def __call__(
-        self, *, challenge_screenshot: Union[str, Path], **kwargs
+        self, *, challenge_screenshot: str | Path, **kwargs
     ) -> ImageBinaryChallenge:
         """
         Analyze a 9-grid challenge and return the solution coordinates.

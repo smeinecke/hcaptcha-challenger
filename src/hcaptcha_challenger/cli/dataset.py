@@ -2,6 +2,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from playwright.async_api import async_playwright
@@ -9,17 +10,21 @@ from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
-    Progress,
-    TextColumn,
     BarColumn,
-    TaskProgressColumn,
-    TimeRemainingColumn,
+    Progress,
     SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeRemainingColumn,
 )
 from rich.table import Table
-from typing_extensions import Annotated, TypedDict
+from typing_extensions import TypedDict
 
-from hcaptcha_challenger.agent.collector import CollectorConfig, Collector, check_dataset
+from hcaptcha_challenger.agent.collector import (
+    Collector,
+    CollectorConfig,
+    check_dataset,
+)
 from hcaptcha_challenger.models import CaptchaPayload
 from hcaptcha_challenger.utils import SiteKey
 
@@ -126,10 +131,10 @@ async def _create_and_monitor_progress(collector: Collector, max_loops: int):
             except asyncio.TimeoutError:
                 if collection_task and not collection_task.done():
                     collection_task.cancel()
-    except Exception as e:
+    except Exception:
         if collection_task and not collection_task.done():
             collection_task.cancel()
-        raise e
+        raise
 
 
 async def _launch_collector(
@@ -188,7 +193,7 @@ def collect(
     except KeyboardInterrupt:
         typer.echo("Collector stopped")
         sys.exit(0)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         typer.echo(f"Collector error: {e}")
         sys.exit(1)
 
@@ -264,7 +269,7 @@ def check(
                 dataset_stats["valid"] += 1
                 dataset_stats["types"][request_type]["valid"] += 1
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 # Check failed, record error
                 error_info = {
                     "file": str(captcha_json.resolve()),

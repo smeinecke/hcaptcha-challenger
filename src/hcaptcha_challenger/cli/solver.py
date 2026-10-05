@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich import box
@@ -33,7 +33,7 @@ def check_cost(
         ),
     ] = DEFAULT_CHALLENGE_DIR,
     output_file: Annotated[
-        Optional[Path], typer.Option(help="Save stats to JSON file (optional)")
+        Path | None, typer.Option(help="Save stats to JSON file (optional)")
     ] = None,
     show_all_models: Annotated[
         bool, typer.Option("--all", "-a", help="Show details for all models, even with low usage")
@@ -184,6 +184,6 @@ def check_cost(
                 f"Use --all flag to show all models.[/dim italic]"
             )
 
-    except Exception as e:
-        console.print(Panel(f"[bold red]Error: {str(e)}", title="Error", border_style="red"))
+    except Exception as e:  # noqa: BLE001
+        console.print(Panel(f"[bold red]Error: {e!s}", title="Error", border_style="red"))
         raise typer.Exit(1)

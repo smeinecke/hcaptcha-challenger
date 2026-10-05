@@ -8,12 +8,11 @@ Supports single file conversion or batch conversion of all .webm files in the en
 import os
 import subprocess
 from pathlib import Path
-from typing import Optional, List
 
 from loguru import logger
 
 
-def convert_webm_to_mp4(input_file: str, output_file: Optional[str] = None) -> bool:
+def convert_webm_to_mp4(input_file: str, output_file: str | None = None) -> bool:
     """
     Convert a single WebM file to MP4 format
 
@@ -53,7 +52,7 @@ def convert_webm_to_mp4(input_file: str, output_file: Optional[str] = None) -> b
         ]
 
         # 执行命令
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
         if result.returncode != 0:
             logger.error(f"Conversion failed: {result.stderr}")
@@ -62,12 +61,12 @@ def convert_webm_to_mp4(input_file: str, output_file: Optional[str] = None) -> b
         logger.success(f"Conversion successfully: {output_file}")
         return True
 
-    except Exception as e:
-        logger.exception(f"An error occurred during the conversion process: {str(e)}")
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"An error occurred during the conversion process: {e!s}")
         return False
 
 
-def batch_convert(input_dir: str, output_dir: Optional[str] = None) -> None:
+def batch_convert(input_dir: str, output_dir: str | None = None) -> None:
     """
     Batch convert all WebM files in the directory
 
@@ -116,15 +115,15 @@ def batch_convert(input_dir: str, output_dir: Optional[str] = None) -> None:
 def check_ffmpeg() -> bool:
     """Check if the system is installed ffmpeg"""
     try:
-        subprocess.run(['ffmpeg', '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=False)
         return True
     except FileNotFoundError:
         return False
 
 
 def invoke(
-    input_path: str, output_path: Optional[str] = None, is_directory: bool = False
-) -> List[dict]:
+    input_path: str, output_path: str | None = None, is_directory: bool = False
+) -> list[dict]:
     """
     Call the conversion function programmatically
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 SpatialPathReasoner - Drag and drop challenge solver.
 
@@ -7,7 +6,6 @@ moved to which target location based on visual patterns and implicit matching ru
 """
 
 from pathlib import Path
-from typing import List, Union
 
 from hcaptcha_challenger.models import ImageDragDropChallenge
 from hcaptcha_challenger.tools.spatial.base import SpatialReasoner
@@ -30,10 +28,10 @@ class SpatialPathReasoner(SpatialReasoner[ImageDragDropChallenge]):
     async def __call__(
         self,
         *,
-        challenge_screenshot: Union[str, Path],
-        grid_divisions: Union[str, Path],
+        challenge_screenshot: str | Path,
+        grid_divisions: str | Path,
         auxiliary_information: str | None = None,
-        extra_images: List[Path] | None = None,
+        extra_images: list[Path] | None = None,
         **kwargs,
     ) -> ImageDragDropChallenge:
         """

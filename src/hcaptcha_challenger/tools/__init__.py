@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Time       : 2023/8/19 17:52
 # Author     : QIN2DIM
 # GitHub     : https://github.com/QIN2DIM
@@ -29,7 +28,7 @@ from .challenge_router import ChallengeClassifier, ChallengeRouter
 from .image_classifier import ImageClassifier
 
 # Spatial reasoning tools
-from .spatial import SpatialPathReasoner, SpatialPointReasoner, SpatialBboxReasoner
+from .spatial import SpatialBboxReasoner, SpatialPathReasoner, SpatialPointReasoner
 
 __all__ = [
     # Challenge routing
@@ -37,8 +36,8 @@ __all__ = [
     "ChallengeRouter",
     # Image classification
     "ImageClassifier",
+    "SpatialBboxReasoner",
     # Spatial reasoning
     "SpatialPathReasoner",
     "SpatialPointReasoner",
-    "SpatialBboxReasoner",
 ]

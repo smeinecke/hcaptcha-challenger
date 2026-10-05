@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 OpenAIProvider - OpenAI-compatible API implementation.
 
@@ -16,7 +15,7 @@ import base64
 import json
 import re
 from pathlib import Path
-from typing import List, Type, TypeVar
+from typing import TypeVar
 
 from loguru import logger
 from openai import (
@@ -124,7 +123,7 @@ class OpenAIProvider:
             )
         return self._client
 
-    def _build_image_content(self, images: List[Path]) -> List[dict]:
+    def _build_image_content(self, images: list[Path]) -> list[dict]:
         """Build image content blocks for the API."""
         content = []
         for image_path in images:
@@ -154,7 +153,7 @@ class OpenAIProvider:
 
     def _log_request(
         self,
-        messages: List[dict],
+        messages: list[dict],
         response_schema: dict,
         temperature: float,
     ) -> None:
@@ -233,8 +232,8 @@ class OpenAIProvider:
     async def generate_with_images(
         self,
         *,
-        images: List[Path],
-        response_schema: Type[ResponseT],
+        images: list[Path],
+        response_schema: type[ResponseT],
         user_prompt: str | None = None,
         description: str | None = None,
         **kwargs,
@@ -344,5 +343,5 @@ class OpenAIProvider:
                 json.dumps(cache_data, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to cache response: {e}")

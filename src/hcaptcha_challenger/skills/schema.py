@@ -13,7 +13,7 @@ class SkillRule(BaseModel):
     # Pre-computed lowercase triggers for faster matching
     _triggers_lower: list[str] | None = None
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context, /) -> None:
         """Pre-compute lowercase triggers after model initialization."""
         object.__setattr__(self, "_triggers_lower", [t.lower() for t in self.triggers])
 

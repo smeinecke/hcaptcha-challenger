@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 GeminiProvider - Google Gemini API implementation.
 
@@ -10,7 +9,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import ClassVar, List, Type, TypeVar, cast
+from typing import ClassVar, TypeVar, cast
 
 from google import genai
 from google.genai import types
@@ -107,7 +106,7 @@ class GeminiProvider:
         """Get the last prepared request payload for debugging/caching purposes."""
         return self._last_request_payload
 
-    async def _upload_files(self, files: List[Path]) -> list[types.File]:
+    async def _upload_files(self, files: list[Path]) -> list[types.File]:
         """Upload multiple files concurrently."""
         valid_files = [f for f in files if f and Path(f).exists()]
         if not valid_files:
@@ -116,7 +115,7 @@ class GeminiProvider:
         return list(await asyncio.gather(*upload_tasks))
 
     @staticmethod
-    def _files_to_parts(files: List[types.File]) -> List[types.Part]:
+    def _files_to_parts(files: list[types.File]) -> list[types.Part]:
         """Convert uploaded files to parts."""
         return [types.Part.from_uri(file_uri=f.uri, mime_type=f.mime_type) for f in files]
 
@@ -144,8 +143,8 @@ class GeminiProvider:
     async def generate_with_images(
         self,
         *,
-        images: List[Path],
-        response_schema: Type[ResponseT],
+        images: list[Path],
+        response_schema: type[ResponseT],
         user_prompt: str | None = None,
         description: str | None = None,
         request_debug_path: Path | None = None,
@@ -236,7 +235,7 @@ class GeminiProvider:
                 json.dumps(self._response.model_dump(mode="json"), indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to cache response: {e}")
 
     def cache_request(self, path: Path) -> None:
@@ -249,5 +248,5 @@ class GeminiProvider:
                 json.dumps(self._last_request_payload, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to cache request: {e}")

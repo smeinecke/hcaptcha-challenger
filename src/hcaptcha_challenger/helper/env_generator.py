@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 # Description: Generate .env.example file from AgentConfig
 
 import inspect
 import re
 import textwrap
 from pathlib import Path
-from typing import Type, Optional, get_type_hints, Literal, get_origin, get_args
+from typing import Literal, get_args, get_origin, get_type_hints
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
 def generate_env_example(
-    config_class: Type[BaseSettings], output_dir: Optional[Path] = None
+    config_class: type[BaseSettings], output_dir: Path | None = None
 ) -> Path:
     """
     Generate a .env.example file based on a pydantic BaseSettings class.

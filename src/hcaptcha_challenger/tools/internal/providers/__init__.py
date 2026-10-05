@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Provider implementations for different LLM backends.
 
 from .gemini import GeminiProvider

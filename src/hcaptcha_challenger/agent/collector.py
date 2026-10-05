@@ -6,15 +6,14 @@ from asyncio import Queue
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple
 
 import httpx
 import msgpack
 from loguru import logger
-from playwright.async_api import Page, Response, Locator, TimeoutError, expect
-from pydantic import Field, BaseModel
+from playwright.async_api import Locator, Page, Response, TimeoutError, expect
+from pydantic import BaseModel, Field
 
-from hcaptcha_challenger.models import RequestType, CaptchaPayload, CaptchaResponse
+from hcaptcha_challenger.models import CaptchaPayload, CaptchaResponse, RequestType
 from hcaptcha_challenger.utils import SiteKey
 
 
@@ -23,7 +22,7 @@ class CollectorConfig(BaseModel):
 
     site_key: str = Field(default=SiteKey.user_easy)
 
-    focus_types: List[RequestType] = Field(
+    focus_types: list[RequestType] = Field(
         default_factory=lambda _: [
             RequestType.IMAGE_DRAG_DROP,
             RequestType.IMAGE_LABEL_AREA_SELECT,
@@ -142,7 +141,7 @@ class Collector:
                         return typeof hsw === 'function' ? true : 'hsw不是函数';
                     }
                     """)
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 logger.error(f"An error occurred while injecting hsw script: {err}")
         elif "/getcaptcha/" in response.url:
             # Content-Type: application/json
@@ -193,11 +192,11 @@ class Collector:
                 # If the reverse fails, fall back to the original process
                 else:
                     logger.warning("HSW reverse failed, fallback to regular processing")
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 logger.error(f"Reverse processing getcaptcha failed: {err}")
                 self._captcha_payload_queue.put_nowait(None)
 
-    def _create_cache_key(self, captcha_payload: CaptchaPayload) -> Tuple[str, Path]:
+    def _create_cache_key(self, captcha_payload: CaptchaPayload) -> tuple[str, Path]:
         """
 
         Args:
@@ -208,7 +207,7 @@ class Collector:
         """
         request_type = captcha_payload.request_type.value
         prompt = captcha_payload.get_requester_question()
-        current_datetime = datetime.now()
+        current_datetime = datetime.now().astimezone()
         current_time = current_datetime.strftime("%Y%m%d/%Y%m%d%H%M%S%f")
 
         cache_key = self.config.dataset_dir.joinpath(request_type, prompt, current_time)
@@ -332,7 +331,7 @@ class Collector:
                 else:
                     await self.page.wait_for_timeout(300)
                     await self._refresh_challenge()
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 logger.error(f"Error occurred during challenge: {err}")
                 return await self.launch()
 

@@ -1,16 +1,15 @@
-from typing import Tuple
 
 import cv2
 import numpy as np
 
 
 def create_grid_reference(
-    image_size: Tuple[int, int],
-    bounding_box: Tuple[Tuple[int, int], Tuple[int, int]],
+    image_size: tuple[int, int],
+    bounding_box: tuple[tuple[int, int], tuple[int, int]],
     grid_divisions: int,
-    line_color: Tuple[int, int, int] = (0, 255, 0),  # Green in BGR
+    line_color: tuple[int, int, int] = (0, 255, 0),  # Green in BGR
     line_thickness: int = 1,
-    background_color: Tuple[int, int, int] = (0, 0, 0),  # Black background
+    background_color: tuple[int, int, int] = (0, 0, 0),  # Black background
     alpha: float = 0.5,  # Transparency level for overlay
 ) -> np.ndarray:
     """
@@ -62,9 +61,9 @@ def create_grid_reference(
 
 def overlay_grid_on_image(
     image: np.ndarray,
-    bounding_box: Tuple[Tuple[int, int], Tuple[int, int]],
+    bounding_box: tuple[tuple[int, int], tuple[int, int]],
     grid_divisions: int,
-    line_color: Tuple[int, int, int] = (255, 0, 0),
+    line_color: tuple[int, int, int] = (255, 0, 0),
     line_thickness: int = 2,
     alpha: float = 0.5,
 ) -> np.ndarray:

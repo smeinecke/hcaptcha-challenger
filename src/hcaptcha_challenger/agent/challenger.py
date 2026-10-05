@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Time       : 2024/4/7 11:43
 # Author     : QIN2DIM
 # GitHub     : https://github.com/QIN2DIM
@@ -14,7 +13,7 @@ from asyncio import Queue
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any
 from uuid import uuid4
 
 import matplotlib.pyplot as plt
@@ -61,8 +60,8 @@ from hcaptcha_challenger.tools.internal.providers import ChatProvider, OpenAIPro
 
 
 def _generate_bezier_trajectory(
-    start: Tuple[float, float], end: Tuple[float, float], steps: int
-) -> List[Tuple[float, float]]:
+    start: tuple[float, float], end: tuple[float, float], steps: int
+) -> list[tuple[float, float]]:
     """
     Generates a quadratic bezier curve trajectory between start and end points.
     """
@@ -94,7 +93,7 @@ def _generate_bezier_trajectory(
     return points
 
 
-def _generate_dynamic_delays(steps: int, base_delay: int) -> List[float]:
+def _generate_dynamic_delays(steps: int, base_delay: int) -> list[float]:
     """
     Generates dynamic delays between mouse movements to simulate human-like acceleration/deceleration.
     """
@@ -123,10 +122,10 @@ def _generate_dynamic_delays(steps: int, base_delay: int) -> List[float]:
 
 
 def _nearest_entity_center(
-    pt: Tuple[int, int] | None,
-    centers: List[Tuple[int, int]],
+    pt: tuple[int, int] | None,
+    centers: list[tuple[int, int]],
     radius: float,
-) -> Tuple[int, int] | None:
+) -> tuple[int, int] | None:
     """Entity center nearest to pt, or None when beyond radius."""
     if not pt or not centers:
         return None
@@ -136,13 +135,13 @@ def _nearest_entity_center(
     return None
 
 
-def _entity_centers_webpage(task, bbox: dict | None) -> List[Tuple[int, int]]:
+def _entity_centers_webpage(task, bbox: dict | None) -> list[tuple[int, int]]:
     """
     Entity centers from the captcha payload converted to webpage coordinates.
 
     Entity `coords` are the image-relative top-left corner; `size` is w×h.
     """
-    centers: List[Tuple[int, int]] = []
+    centers: list[tuple[int, int]] = []
     if not (task and task.entities and bbox):
         return centers
     for ent in task.entities:
@@ -157,7 +156,7 @@ def _entity_centers_webpage(task, bbox: dict | None) -> List[Tuple[int, int]]:
 
 
 SINGLE_IGNORE_TYPE = IGNORE_REQUEST_TYPE_LITERAL | RequestType | ChallengeTypeEnum
-IGNORE_REQUEST_TYPE_LIST = List[SINGLE_IGNORE_TYPE]
+IGNORE_REQUEST_TYPE_LIST = list[SINGLE_IGNORE_TYPE]
 
 
 class AgentConfig(BaseSettings):
@@ -195,7 +194,7 @@ class AgentConfig(BaseSettings):
     challenge_dir: Path = Path("tmp/.challenge")
     captcha_response_dir: Path = Path("tmp/.captcha")
     ignore_request_types: IGNORE_REQUEST_TYPE_LIST | None = Field(default_factory=list)
-    ignore_request_questions: List[str] | None = Field(default_factory=list)
+    ignore_request_questions: list[str] | None = Field(default_factory=list)
 
     DISABLE_BEZIER_TRAJECTORY: bool = Field(
         default=False,
@@ -362,7 +361,7 @@ class AgentConfig(BaseSettings):
         Returns: ./.challenge / require_type / prompt / current_time
 
         """
-        current_datetime = datetime.now()
+        current_datetime = datetime.now().astimezone()
         current_time = current_datetime.strftime("%Y%m%d/%Y%m%d%H%M%S%f")
 
         prompt = prompt.translate(str.maketrans("", "", "".join(INV)))
@@ -389,7 +388,7 @@ class AgentConfig(BaseSettings):
             _cache_path_captcha.write_text(
                 json.dumps(_unpacked_data, indent=2, ensure_ascii=False), encoding="utf8"
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to write captcha payload to cache: {e}")
 
         if self.enable_challenger_debug:
@@ -499,7 +498,7 @@ class RoboticArm:
                     challenge_view = frame.locator("//div[@class='challenge-view']")
                     if await challenge_view.is_visible():
                         return frame
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error finding all iframes: {e}")
 
         logger.error("Cannot find a valid challenge frame")
@@ -541,7 +540,7 @@ class RoboticArm:
             )
             if challenge_prompt and isinstance(challenge_prompt, str):
                 return self._skill_manager.get_skill(challenge_prompt, job_type)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Error while processing captcha payload: {e}")
 
         return f"Please note that the current task type is: {job_type.value}"
@@ -740,10 +739,10 @@ class RoboticArm:
         screenshot_path: Path,
         output_path: Path,
         bbox: dict,
-        entity_center: Tuple[int, int] | None,
-        llm_start: Tuple[int, int] | None,
-        llm_end: Tuple[int, int] | None,
-        corrected_start: Tuple[int, int] | None,
+        entity_center: tuple[int, int] | None,
+        llm_start: tuple[int, int] | None,
+        llm_end: tuple[int, int] | None,
+        corrected_start: tuple[int, int] | None,
     ):
         """
         Draw debug markers on a challenge screenshot to visualize coordinate accuracy.
@@ -755,7 +754,7 @@ class RoboticArm:
             # Convert bbox-relative image coordinates to screenshot-relative
             ox, oy = int(bbox["x"]), int(bbox["y"])
 
-            def rel_to_screenshot(px: int, py: int) -> Tuple[int, int]:
+            def rel_to_screenshot(px: int, py: int) -> tuple[int, int]:
                 return (px - ox, py - oy)
 
             # Entity center (corrected start origin) - green circle
@@ -796,7 +795,7 @@ class RoboticArm:
 
             img.save(output_path)
             logger.debug(f"Drag debug overlay saved to: {output_path}")
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             logger.warning(f"Failed to save drag debug overlay: {err}")
 
     async def _perform_drag_drop(self, path: SpatialPath, steps: int = 25, delay_ms: int = 15):
@@ -938,7 +937,7 @@ class RoboticArm:
         )
         await asyncio.sleep(0.2)
 
-    def _drag_mechanisms(self) -> List[str]:
+    def _drag_mechanisms(self) -> list[str]:
         """Drag mechanisms in preference order; the configured one runs first."""
         if self.config.USE_POINTER_EVENTS:
             preferred = "pointer"
@@ -957,7 +956,7 @@ class RoboticArm:
             btn_text = await submit_btn.text_content()
             logger.debug(f"Submit button text after drag: '{btn_text}'")
             return not (btn_text and "skip" in btn_text.lower())
-        except Exception:
+        except Exception:  # noqa: BLE001
             return True
 
     @staticmethod
@@ -1180,7 +1179,7 @@ class RoboticArm:
             raw, projection = await self._capture_spatial_mapping(frame_challenge, cache_key, cid)
 
             user_prompt = self._match_user_prompt(job_type)
-            extra_images: List[Path] | None = None
+            extra_images: list[Path] | None = None
             cropped_raw = raw  # Default to uncropped image
 
             # Get task and check if it's a compare/matching puzzle
@@ -1213,7 +1212,7 @@ class RoboticArm:
                     ]
                     try:
                         img_w = Image.open(raw).size[0]
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         img_w = 500
                     # all([]) is True → require a non-empty list, otherwise every compare
                     # puzzle whose entities lack coords would be misclassified as tube
@@ -1278,7 +1277,7 @@ class RoboticArm:
                             cropped_raw = cache_key.joinpath(f"{cache_key.name}_{cid}_cropped.png")
                             cropped_img.save(cropped_raw)
                             logger.debug(f"Cropped image from {width}x{height} to {crop_x}x{height}, saved to {cropped_raw}")
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.warning(f"Failed to crop image: {e}, using original")
                         cropped_raw = raw
 
@@ -1314,7 +1313,7 @@ class RoboticArm:
                             entity_path.write_bytes(base64.b64decode(image_data))
                             extra_images.append(entity_path)
                             logger.debug(f"Extracted entity image {i} from browser: {entity_path}")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"Failed to extract entity images from browser: {e}")
                     extra_images = None
 
@@ -1357,7 +1356,14 @@ class RoboticArm:
 
             snap_radius = self.config.ENTITY_SNAP_RADIUS
 
-            def _snap_path(path: SpatialPath) -> None:
+            def _snap_path(
+                path: SpatialPath,
+                *,
+                corrected_start=corrected_start,
+                entity_centers=entity_centers,
+                snap_radius=snap_radius,
+                is_compare_puzzle=is_compare_puzzle,
+            ) -> None:
                 """Snap a path's endpoints to known entity geometry, in place."""
                 llm_start = (path.start_point.x, path.start_point.y)
                 llm_end = (path.end_point.x, path.end_point.y)
@@ -1423,7 +1429,7 @@ class RoboticArm:
                         ]
                         for path in response.paths:
                             _snap_path(path)
-                except Exception as err:
+                except Exception as err:  # noqa: BLE001
                     logger.warning(f"Drag verification failed, keeping original: {err}")
 
             paths_count = len(response.paths) if response.paths else 0
@@ -1539,7 +1545,7 @@ class AgentV:
         self._captcha_payload: CaptchaPayload | None = None
         self._captcha_payload_queue: Queue[CaptchaPayload | None] = Queue()
         self._captcha_response_queue: Queue[CaptchaResponse] = Queue()
-        self.cr_list: List[CaptchaResponse] = []
+        self.cr_list: list[CaptchaResponse] = []
         self._challenge_count: int = 0  # Track challenges for MAX_CHALLENGES limit
 
         self.page.on("response", self._task_handler)
@@ -1552,12 +1558,12 @@ class AgentV:
 
         try:
             captcha_response = cr.model_dump(mode="json", by_alias=True)
-            current_time = datetime.now().strftime("%Y%m%d/%Y%m%d%H%M%S%f")
+            current_time = datetime.now().astimezone().strftime("%Y%m%d/%Y%m%d%H%M%S%f")
             cache_path = self.config.captcha_response_dir.joinpath(f"{current_time}.json")
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             t = json.dumps(captcha_response, indent=2, ensure_ascii=False)
             cache_path.write_text(t, encoding="utf-8")
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             logger.error(f"Saving captcha response failed - {err}")
 
     @logger.catch
@@ -1571,7 +1577,7 @@ class AgentV:
                         return typeof hsw === 'function' ? true : 'hsw不是函数';
                     }
                     """)
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 logger.error(f"An error occurred while injecting hsw script: {err}")
         elif "/getcaptcha/" in response.url:
             self._captcha_payload = None
@@ -1633,14 +1639,14 @@ class AgentV:
                 else:
                     logger.warning("HSW reverse failed, fallback to regular processing")
                     self._captcha_payload_queue.put_nowait(None)
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 logger.error(f"Reverse processing getcaptcha failed: {err}")
                 self._captcha_payload_queue.put_nowait(None)
         elif "/checkcaptcha/" in response.url:
             try:
                 metadata = await response.json()
                 self._captcha_response_queue.put_nowait(CaptchaResponse(**metadata))
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 logger.exception(err)
 
     async def _review_challenge_type(self) -> RequestType | ChallengeTypeEnum:
@@ -1692,7 +1698,7 @@ class AgentV:
                     )
 
             logger.warning(f"Unknown request_type: {request_type=}")
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             logger.exception(f"Error parsing challenge type: {err}")
 
         # Fallback to visual recognition solution
@@ -1764,7 +1770,7 @@ class AgentV:
             await self.page.wait_for_timeout(2000)
             await self.robotic_arm.refresh_challenge()
             return await self._solve_captcha()
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             # This is an execution error inside the challenge,
             # hcaptcha challenge does not automatically refresh
             logger.exception(f"ChallengeException - type={challenge_type.value} {err=}")
@@ -1783,7 +1789,7 @@ class AgentV:
                 return
             payload = self._captcha_payload
             outcome = {
-                "ts": datetime.now().isoformat(timespec="seconds"),
+                "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
                 "is_pass": cr.is_pass if cr else None,
                 "error": error or (cr.error if cr else "response_timeout"),
                 "request_type": (
@@ -1801,7 +1807,7 @@ class AgentV:
             cache_key.joinpath("_result.json").write_text(
                 json.dumps(outcome, indent=2, ensure_ascii=False), encoding="utf8"
             )
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             logger.warning(f"Failed to write challenge outcome: {err}")
 
     async def wait_for_challenge(self) -> ChallengeSignal:
@@ -1829,7 +1835,7 @@ class AgentV:
 
             # Debug dump: capture page state to investigate why no response was received
             try:
-                debug_ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                debug_ts = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S_%f")
                 debug_dir = self.config.challenge_dir.joinpath("_timeout_debug", debug_ts)
                 debug_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1848,11 +1854,11 @@ class AgentV:
                     frame_html_path = debug_dir.joinpath("challenge_frame.html")
                     frame_html = await frame_challenge.page.content()
                     frame_html_path.write_text(frame_html, encoding="utf-8")
-                except Exception:
-                    pass
+                except Exception as frame_err:  # noqa: BLE001
+                    logger.debug(f"Could not dump challenge frame HTML: {frame_err}")
 
                 logger.debug(f"Timeout debug state saved to: {debug_dir}")
-            except Exception as dump_err:
+            except Exception as dump_err:  # noqa: BLE001
                 logger.warning(f"Failed to save timeout debug state: {dump_err}")
 
             # Treat timeout-as-no-response as failure and retry if enabled

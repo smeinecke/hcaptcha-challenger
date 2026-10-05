@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Time       : 2023/11/16 0:23
 # Author     : QIN2DIM
 # GitHub     : https://github.com/QIN2DIM
@@ -8,7 +7,7 @@ from __future__ import annotations
 import json
 import unicodedata
 from enum import Enum
-from typing import Literal, List, Dict, Any, Union
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -129,25 +128,25 @@ class CaptchaRequestConfig(BaseModel):
 class CaptchaTaskEntity(BaseModel):
     entity_id: str | None = Field(default="")
     entity_uri: str | None = Field(default="")
-    coords: List[int] | None = Field(default_factory=list)
-    size: List[int] | None = Field(default_factory=list)
+    coords: list[int] | None = Field(default_factory=list)
+    size: list[int] | None = Field(default_factory=list)
     metadata: dict | None = Field(default_factory=dict)
 
 
 class CaptchaTask(BaseModel):
     datapoint_uri: str | None = Field(default="")
     task_key: str | None = Field(default="")
-    entities: List[CaptchaTaskEntity] | None = Field(default_factory=list)
+    entities: list[CaptchaTaskEntity] | None = Field(default_factory=list)
 
 
 class CaptchaPayload(BaseModel):
     key: str = Field(default="")
     request_config: CaptchaRequestConfig | dict = Field(default_factory=dict)
     request_type: RequestType | None = Field(default=None)
-    requester_question: Dict[str, str] | None = Field(default_factory=dict)
-    requester_restricted_answer_set: Dict[str, Any] | None = Field(default_factory=dict)
-    requester_question_example: List[str] | str | None = Field(default=None)
-    tasklist: List[CaptchaTask] = Field(default_factory=list)
+    requester_question: dict[str, str] | None = Field(default_factory=dict)
+    requester_restricted_answer_set: dict[str, Any] | None = Field(default_factory=dict)
+    requester_question_example: list[str] | str | None = Field(default=None)
+    tasklist: list[CaptchaTask] = Field(default_factory=list)
     oby: str | None = Field(default=None)
     normalized: bool | None = Field(default=None)
     c: Token = Field(default_factory=dict)
@@ -241,9 +240,9 @@ IGNORE_REQUEST_TYPE_LITERAL = Literal[
 ]
 
 # https://ai.google.dev/gemini-api/docs/rate-limits#current-rate-limits
-SCoTModelType = Union[
-    str,
-    Literal[
+SCoTModelType = (
+    str
+    | Literal[
         # This model is not available in the free plan.
         # Recommended for production environments for more tolerant rate limits.
         # [✨] https://ai.google.dev/gemini-api/docs/models?hl=zh-cn#gemini-3-pro
@@ -256,32 +255,32 @@ SCoTModelType = Union[
         "gemini-2.5-flash",
         # https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash
         "gemini-3.7-flash",
-    ],
-]
+    ]
+)
 
 DEFAULT_SCOT_MODEL: SCoTModelType = "gemini-3.7-flash"
 
-FastShotModelType = Union[
-    str,
-    Literal[
+FastShotModelType = (
+    str
+    | Literal[
         # https://ai.google.dev/gemini-api/docs/models#gemini-2.5-flash
         "gemini-2.5-flash",
         # https://ai.google.dev/gemini-api/docs/models#gemini-2.5-flash-lite
         "gemini-2.5-flash-lite",
         # https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash
         "gemini-3.7-flash",
-    ],
-]
+    ]
+)
 
 DEFAULT_FAST_SHOT_MODEL: FastShotModelType = "gemini-3.7-flash"
 
-THINKING_BUDGET_MODELS: List[Union[SCoTModelType, FastShotModelType]] = [
+THINKING_BUDGET_MODELS: list[SCoTModelType | FastShotModelType] = [
     "gemini-2.5-flash",
     "gemini-2.5-pro",
     "gemini-3.7-flash",
 ]
 
-THINKING_LEVEL_MODELS: List[str] = [
+THINKING_LEVEL_MODELS: list[str] = [
     "gemini-3-pro-preview",
     "gemini-3-pro",
     "gemini-3-flash",
@@ -295,7 +294,7 @@ class ChallengeRouterResult(BaseModel):
 
 
 class BoundingBoxCoordinate(BaseModel):
-    box_2d: List[int] = Field(
+    box_2d: list[int] = Field(
         description="It can only be in planar coordinate format, e.g. [0,2] for the 3rd element in the first row",
         min_length=2,
         max_length=2,
@@ -307,9 +306,7 @@ class BoundingBoxCoordinate(BaseModel):
 
         # Determine the new x-coordinate
         if not (0 <= val_for_x <= 2):
-            if val_for_x < 0:
-                new_x = 0
-            elif val_for_x < 333:
+            if val_for_x < 0 or val_for_x < 333:
                 new_x = 0
             elif val_for_x < 667:
                 new_x = 1
@@ -320,9 +317,7 @@ class BoundingBoxCoordinate(BaseModel):
 
         # Determine the new y-coordinate
         if not (0 <= val_for_y <= 2):
-            if val_for_y < 0:
-                new_y = 0
-            elif val_for_y < 333:
+            if val_for_y < 0 or val_for_y < 333:
                 new_y = 0
             elif val_for_y < 667:
                 new_y = 1
@@ -336,9 +331,9 @@ class BoundingBoxCoordinate(BaseModel):
 
 class ImageBinaryChallenge(BaseModel):
     challenge_prompt: str
-    coordinates: List[BoundingBoxCoordinate]
+    coordinates: list[BoundingBoxCoordinate]
 
-    def convert_box_to_boolean_matrix(self) -> List[bool]:
+    def convert_box_to_boolean_matrix(self) -> list[bool]:
         """
         Converts the coordinate list to a one-dimensional Boolean matrix.
 
@@ -377,7 +372,7 @@ class PointCoordinate(BaseModel):
 
 class ImageAreaSelectChallenge(BaseModel):
     challenge_prompt: str
-    points: List[PointCoordinate]
+    points: list[PointCoordinate]
 
     @property
     def log_message(self) -> str:
@@ -393,7 +388,7 @@ class SpatialPath(BaseModel):
 
 class ImageDragDropChallenge(BaseModel):
     challenge_prompt: str
-    paths: List[SpatialPath]
+    paths: list[SpatialPath]
 
     @property
     def log_message(self) -> str:
@@ -449,21 +444,21 @@ SPATIAL_PATH_STRUCTURED_OUTPUT_SCHEMA = {
     "required": ["challenge_prompt", "paths"],
 }
 
-GameRuleMathType = Union[
-    ChallengeTypeEnum,
-    Literal[
+GameRuleMathType = (
+    ChallengeTypeEnum
+    | Literal[
         "image_label_single_select",
         "image_label_multi_select",
         "image_drag_single",
         "image_drag_multi",
-    ],
-]
+    ]
+)
 
 
 class GameRule(BaseModel):
     rule: str
     name: str = Field(default="game-rule-default", description="Name of the rule")
-    match_keys: List[str] | None = Field(
+    match_keys: list[str] | None = Field(
         default_factory=list,
         description="""
         Call the challenge by keyword matching, can also be set to full challenge_prompt.
@@ -494,12 +489,12 @@ class GameRule(BaseModel):
 class GameRuleGroup(BaseModel):
     name: str = Field(default="custom")
     type: str = Field(default="select", description="Reserved fields, not used yet")
-    rules: List[GameRule] = Field(default_factory=list)
+    rules: list[GameRule] = Field(default_factory=list)
 
 
 class PluggableUserPrompt(BaseModel):
-    rules: List[GameRule] = Field(default_factory=list)
-    rule_groups: List[GameRule]
+    rules: list[GameRule] = Field(default_factory=list)
+    rule_groups: list[GameRule]
 
 
 class CoordinateGrid(BaseModel):
