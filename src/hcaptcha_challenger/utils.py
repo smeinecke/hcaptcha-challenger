@@ -110,7 +110,12 @@ class SiteKey:
 
     @staticmethod
     def as_site_link(
-        site_key: Literal["discord", "epic", "easy", "moderate", "difficult", "user"] | str,
+        site_key: Literal[
+            "discord", "epic", "easy", "moderate", "difficult", "user",
+            "hcaptcha", "hcaptcha_signup", "new_type_challenge", "cloud_horse",
+            "top_level",
+        ]
+        | str,
     ):
         keymap = {
             "discord": SiteKey.discord,
@@ -119,6 +124,11 @@ class SiteKey:
             "easy": SiteKey.user_easy,
             "moderate": SiteKey.user_moderate,
             "difficult": SiteKey.user_difficult,
+            "hcaptcha": SiteKey.hcaptcha,
+            "hcaptcha_signup": SiteKey.hcaptcha_signup,
+            "new_type_challenge": SiteKey.new_type_challenge,
+            "cloud_horse": SiteKey.cloud_horse,
+            "top_level": SiteKey.top_level,
         }
         url = "https://accounts.hcaptcha.com/demo"
         if site_key in keymap:
