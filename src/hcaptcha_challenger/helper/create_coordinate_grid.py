@@ -13,6 +13,21 @@ class FloatRect(TypedDict):
     height: float
 
 
+def _calculate_figsize(img: np.ndarray, dpi: int = 100) -> Tuple[float, float]:
+    """
+    Calculate figure size in inches to maintain original image pixel dimensions.
+
+    Args:
+        img: Input image array
+        dpi: Dots per inch for the figure (default 100)
+
+    Returns:
+        Tuple of (width, height) in inches
+    """
+    img_height, img_width = img.shape[:2]
+    return img_width / dpi, img_height / dpi
+
+
 def _create_adaptive_contrast_grid(
     image: np.ndarray,
     bbox: Union[FloatRect, Tuple[float, float, float, float], List[float]],
@@ -49,7 +64,9 @@ def _create_adaptive_contrast_grid(
 
     cmap_name = 'hot' if avg_brightness < 0.5 else 'cool'
 
-    fig, ax = plt.subplots(figsize=(10, 10))
+    # Use figure size that maintains original image pixel dimensions
+    figsize = _calculate_figsize(img)
+    fig, ax = plt.subplots(figsize=figsize, dpi=100)
 
     ax.imshow(img, extent=(x, x + width, y + height, y))
 
@@ -98,12 +115,8 @@ def _create_adaptive_contrast_grid(
                 )
             )
 
-    ax.set_xlabel('X Coordinate', color=grid_color)
-    ax.set_ylabel('Y Coordinate', color=grid_color)
-
-    ax.set_title('Adaptive Contrast Coordinate Grid', color=grid_color)
-
-    plt.tight_layout()
+    # NOTE: Do NOT use tight_layout or labels that alter the figure geometry.
+    # The figure must preserve 1:1 pixel mapping with the original image.
 
     fig.canvas.draw()
     # Get the RGBA buffer from the figure
@@ -169,8 +182,9 @@ def create_coordinate_grid(
     else:
         x, y, width, height = bbox
 
-    # Create figure with appropriate size
-    fig, ax = plt.subplots(figsize=(10, 10))
+    # Create figure with size matching original image to maintain 1:1 pixel mapping
+    figsize = _calculate_figsize(img)
+    fig, ax = plt.subplots(figsize=figsize, dpi=100)
 
     # Display the image
     ax.imshow(img, extent=(x, x + width, y + height, y))  # Note the y-axis inversion
@@ -205,15 +219,8 @@ def create_coordinate_grid(
     # ax.grid(True, color='gray', alpha=0.5, linestyle='--', linewidth=1.0)
     # ax.grid(True, color='lightgray', alpha=0.2, linestyle='-', linewidth=0.8)
 
-    # Set labels
-    ax.set_xlabel('X Coordinate')
-    ax.set_ylabel('Y Coordinate')
-
-    # Add title
-    ax.set_title('Image with Coordinate Grid')
-
-    # Tight layout
-    plt.tight_layout()
+    # NOTE: Do NOT use tight_layout or labels that alter the figure geometry.
+    # The figure must preserve 1:1 pixel mapping with the original image.
 
     # Convert matplotlib figure to numpy array
     fig.canvas.draw()

@@ -4,6 +4,7 @@
 # GitHub     : https://github.com/QIN2DIM
 # Description:
 import asyncio
+import base64
 import json
 import math
 import os
@@ -19,6 +20,7 @@ from uuid import uuid4
 import matplotlib.pyplot as plt
 import msgpack
 from loguru import logger
+from PIL import Image, ImageDraw
 from playwright.async_api import (
     Frame,
     FrameLocator,
@@ -28,7 +30,7 @@ from playwright.async_api import (
     TimeoutError,
     expect,
 )
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from tenacity import retry, stop_after_attempt, wait_fixed
 
@@ -200,6 +202,27 @@ class AgentConfig(BaseSettings):
         description="When your local network is poor, increase this value appropriately [unit: millisecond]",
     )
 
+    MAX_CHALLENGES: int = Field(
+        default=10,
+        description="Maximum number of challenges to attempt before aborting (credit protection)",
+    )
+
+    ENTITY_SNAP_RADIUS: int = Field(
+        default=80,
+        description="Max pixel distance for snapping LLM drag endpoints to known entity "
+        "centers from the captcha payload [unit: pixel]",
+    )
+
+    USE_HTML5_DRAG: bool = Field(
+        default=False,
+        description="Use HTML5 Drag and Drop API instead of mouse simulation for drag challenges",
+    )
+
+    USE_POINTER_EVENTS: bool = Field(
+        default=False,
+        description="Use Pointer Events API (pointerdown/move/up) instead of mouse simulation for drag challenges",
+    )
+
     CHALLENGE_CLASSIFIER_MODEL: FastShotModelType = Field(
         default=DEFAULT_FAST_SHOT_MODEL,
         description="For the challenge classification task \n"
@@ -252,13 +275,25 @@ class AgentConfig(BaseSettings):
         Raises:
             ValueError: If the API key is empty
         """
-        if not v or not isinstance(v, str):
+        # Emptiness is checked at the model level — LLM_API_KEY is an
+        # accepted substitute when LLM_PROVIDER=openai.
+        return v
+
+    @model_validator(mode="after")
+    def _require_any_api_key(self) -> "AgentConfig":
+        gemini_key = self.GEMINI_API_KEY.get_secret_value()
+        llm_key = self.LLM_API_KEY.get_secret_value() if self.LLM_API_KEY else ""
+        if not gemini_key and not llm_key:
             raise ValueError(
-                "GEMINI_API_KEY is required but not provided. "
-                "Please either pass it directly or set the GEMINI_API_KEY environment variable."
+                "An LLM API key is required. Set GEMINI_API_KEY or LLM_API_KEY. "
                 "Create API Key -> https://aistudio.google.com/app/apikey"
             )
-        return v
+        if self.LLM_PROVIDER.lower() == "gemini" and not gemini_key:
+            raise ValueError(
+                "GEMINI_API_KEY is required when LLM_PROVIDER=gemini. "
+                "Create API Key -> https://aistudio.google.com/app/apikey"
+            )
+        return self
 
     @property
     def spatial_grid_cache(self):
@@ -321,28 +356,25 @@ class RoboticArm:
         self.config = config
         self._debug = config.enable_challenger_debug
 
-        # Create provider based on configuration
-        provider = self._create_provider()
-
         self._challenge_router = ChallengeRouter(
             gemini_api_key=self._get_api_key(),
             model=self._get_model(self.config.CHALLENGE_CLASSIFIER_MODEL),
-            provider=provider,
+            provider=self._create_provider(self._get_model(self.config.CHALLENGE_CLASSIFIER_MODEL)),
         )
         self._image_classifier = ImageClassifier(
             gemini_api_key=self._get_api_key(),
             model=self._get_model(self.config.IMAGE_CLASSIFIER_MODEL),
-            provider=provider,
+            provider=self._create_provider(self._get_model(self.config.IMAGE_CLASSIFIER_MODEL)),
         )
         self._spatial_path_reasoner = SpatialPathReasoner(
             gemini_api_key=self._get_api_key(),
             model=self._get_model(self.config.SPATIAL_PATH_REASONER_MODEL),
-            provider=provider,
+            provider=self._create_provider(self._get_model(self.config.SPATIAL_PATH_REASONER_MODEL)),
         )
         self._spatial_point_reasoner = SpatialPointReasoner(
             gemini_api_key=self._get_api_key(),
             model=self._get_model(self.config.SPATIAL_POINT_REASONER_MODEL),
-            provider=provider,
+            provider=self._create_provider(self._get_model(self.config.SPATIAL_POINT_REASONER_MODEL)),
         )
         self._skill_manager = SkillManager(agent_config=config)
         self.signal_crumb_count: int | None = None
@@ -362,8 +394,8 @@ class RoboticArm:
         """Get the model name, using override if set."""
         return self.config.LLM_MODEL or default_model
 
-    def _create_provider(self) -> ChatProvider | None:
-        """Create the LLM provider based on configuration."""
+    def _create_provider(self, model: str) -> ChatProvider | None:
+        """Create the LLM provider for one reasoner role."""
         provider_type = self.config.LLM_PROVIDER.lower()
 
         if provider_type == "openai":
@@ -372,7 +404,7 @@ class RoboticArm:
                 raise ValueError("API key is required. Set LLM_API_KEY or GEMINI_API_KEY.")
             return OpenAIProvider(
                 api_key=api_key,
-                model=self._get_model("gpt-4o"),
+                model=model,
                 base_url=self.config.LLM_BASE_URL,
                 enable_logging=self.config.OPENAI_ENABLE_LOGGING,
             )
@@ -573,11 +605,66 @@ class RoboticArm:
     async def _capture_spatial_mapping(
         self, frame_challenge: FrameLocator | Frame, cache_key: Path, crumb_id: int | str
     ):
-        # Capture challenge-view
-        challenge_view = frame_challenge.locator("//div[@class='challenge-view']")
+        # Extract challenge image directly from browser canvas/img element (more reliable than screenshot)
         challenge_screenshot = cache_key.joinpath(f"{cache_key.name}_{crumb_id}_challenge_view.png")
         challenge_screenshot.parent.mkdir(parents=True, exist_ok=True)
-        await challenge_view.screenshot(type="png", path=challenge_screenshot)
+
+        image_data = await frame_challenge.evaluate("""() => {
+            const challengeView = document.querySelector('.challenge-view');
+            if (!challengeView) return null;
+
+            // Try canvas first (hCaptcha often renders puzzle as canvas)
+            const canvas = challengeView.querySelector('canvas');
+            if (canvas) {
+                return canvas.toDataURL('image/png').split(',')[1];
+            }
+
+            // Try img element
+            const img = challengeView.querySelector('img');
+            if (img) {
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = img.naturalWidth || img.width;
+                tempCanvas.height = img.naturalHeight || img.height;
+                const ctx = tempCanvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                return tempCanvas.toDataURL('image/png').split(',')[1];
+            }
+
+            // Fallback: render challenge-view div contents to canvas
+            const rect = challengeView.getBoundingClientRect();
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = rect.width;
+            tempCanvas.height = rect.height;
+            const ctx = tempCanvas.getContext('2d');
+
+            // Try to capture background image if set
+            const style = window.getComputedStyle(challengeView);
+            const bgImage = style.backgroundImage;
+            if (bgImage && bgImage !== 'none') {
+                const bgUrl = bgImage.slice(4, -1).replace(/"/g, "");
+                return new Promise((resolve, reject) => {
+                    const bgImg = new Image();
+                    bgImg.crossOrigin = 'anonymous';
+                    bgImg.onload = () => {
+                        ctx.drawImage(bgImg, 0, 0, rect.width, rect.height);
+                        resolve(tempCanvas.toDataURL('image/png').split(',')[1]);
+                    };
+                    bgImg.onerror = () => resolve(null);
+                    bgImg.src = bgUrl;
+                });
+            }
+
+            return null;
+        }""")
+
+        if image_data:
+            challenge_screenshot.write_bytes(base64.b64decode(image_data))
+            logger.debug(f"Extracted challenge image from browser canvas: {challenge_screenshot}")
+        else:
+            # Fallback to Playwright screenshot if canvas extraction fails
+            challenge_view = frame_challenge.locator("//div[@class='challenge-view']")
+            await challenge_view.screenshot(type="png", path=challenge_screenshot)
+            logger.debug(f"Fell back to Playwright screenshot: {challenge_screenshot}")
 
         challenge_view = frame_challenge.locator("//div[@class='challenge-view']")
         bbox = await challenge_view.bounding_box()
@@ -597,6 +684,70 @@ class RoboticArm:
         plt.imsave(str(grid_divisions.resolve()), result)
 
         return challenge_screenshot, grid_divisions
+
+    def _save_drag_debug_overlay(
+        self,
+        screenshot_path: Path,
+        output_path: Path,
+        bbox: dict,
+        entity_center: Tuple[int, int] | None,
+        llm_start: Tuple[int, int] | None,
+        llm_end: Tuple[int, int] | None,
+        corrected_start: Tuple[int, int] | None,
+    ):
+        """
+        Draw debug markers on a challenge screenshot to visualize coordinate accuracy.
+        All coordinates are in webpage (absolute) space.
+        """
+        try:
+            img = Image.open(screenshot_path).convert("RGBA")
+            draw = ImageDraw.Draw(img)
+            # Convert bbox-relative image coordinates to screenshot-relative
+            ox, oy = int(bbox["x"]), int(bbox["y"])
+
+            def rel_to_screenshot(px: int, py: int) -> Tuple[int, int]:
+                return (px - ox, py - oy)
+
+            # Entity center (corrected start origin) - green circle
+            if entity_center:
+                ex, ey = rel_to_screenshot(*entity_center)
+                r = 8
+                draw.ellipse([ex - r, ey - r, ex + r, ey + r], outline="lime", width=3)
+                draw.text((ex + 10, ey - 10), "ENTITY", fill="lime")
+
+            # LLM predicted start - red X
+            if llm_start:
+                sx, sy = rel_to_screenshot(*llm_start)
+                r = 10
+                draw.line([(sx - r, sy - r), (sx + r, sy + r)], fill="red", width=3)
+                draw.line([(sx + r, sy - r), (sx - r, sy + r)], fill="red", width=3)
+                draw.text((sx + 10, sy + 10), "LLM-START", fill="red")
+
+            # Corrected start - green X
+            if corrected_start:
+                cx, cy = rel_to_screenshot(*corrected_start)
+                r = 10
+                draw.line([(cx - r, cy - r), (cx + r, cy + r)], fill="lime", width=3)
+                draw.line([(cx + r, cy - r), (cx - r, cy + r)], fill="lime", width=3)
+                draw.text((cx + 10, cy + 10), "CORRECTED-START", fill="lime")
+
+            # LLM predicted end - blue circle
+            if llm_end:
+                edx, edy = rel_to_screenshot(*llm_end)
+                r = 10
+                draw.ellipse([edx - r, edy - r, edx + r, edy + r], outline="cyan", width=3)
+                draw.text((edx + 10, edy + 10), "LLM-END", fill="cyan")
+
+            # Connect corrected start to LLM end with a line
+            if corrected_start and llm_end:
+                cx, cy = rel_to_screenshot(*corrected_start)
+                edx, edy = rel_to_screenshot(*llm_end)
+                draw.line([(cx, cy), (edx, edy)], fill="yellow", width=2)
+
+            img.save(output_path)
+            logger.debug(f"Drag debug overlay saved to: {output_path}")
+        except Exception as err:
+            logger.warning(f"Failed to save drag debug overlay: {err}")
 
     async def _perform_drag_drop(self, path: SpatialPath, steps: int = 25, delay_ms: int = 15):
         """
@@ -656,6 +807,238 @@ class RoboticArm:
         # Small pause between drag operations
         await asyncio.sleep(random.uniform(0.08, 0.12))
 
+    async def _get_frame_relative_drag_points(
+        self, frame_challenge: Frame, path: SpatialPath
+    ) -> tuple[float, float, float, float]:
+        frame_element = await frame_challenge.frame_element()
+        frame_bbox = await frame_element.bounding_box()
+        if not frame_bbox:
+            raise ValueError("Cannot determine challenge frame bounding box for drag dispatch")
+
+        return (
+            path.start_point.x - frame_bbox["x"],
+            path.start_point.y - frame_bbox["y"],
+            path.end_point.x - frame_bbox["x"],
+            path.end_point.y - frame_bbox["y"],
+        )
+
+    async def _perform_drag_drop_html5(self, frame_challenge: Frame, path: SpatialPath):
+        """
+        Performs drag using HTML5 Drag and Drop API via JavaScript event dispatching.
+        This is more reliable for web apps using native HTML5 DnD.
+        """
+        start_x, start_y, end_x, end_y = await self._get_frame_relative_drag_points(
+            frame_challenge, path
+        )
+
+        # Use JavaScript to dispatch HTML5 DnD events
+        await frame_challenge.evaluate(
+            """
+            ([startX, startY, endX, endY]) => {
+                // Find element at start position
+                const startEl = document.elementFromPoint(startX, startY);
+                const endEl = document.elementFromPoint(endX, endY);
+
+                if (!startEl || !endEl) {
+                    console.error('Could not find elements at drag positions');
+                    return false;
+                }
+
+                // Create and dispatch drag events
+                const dragStartEvent = new DragEvent('dragstart', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: startX,
+                    clientY: startY,
+                    dataTransfer: new DataTransfer()
+                });
+                startEl.dispatchEvent(dragStartEvent);
+
+                const dragOverEvent = new DragEvent('dragover', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: endX,
+                    clientY: endY,
+                    dataTransfer: dragStartEvent.dataTransfer
+                });
+                endEl.dispatchEvent(dragOverEvent);
+
+                const dropEvent = new DragEvent('drop', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: endX,
+                    clientY: endY,
+                    dataTransfer: dragStartEvent.dataTransfer
+                });
+                endEl.dispatchEvent(dropEvent);
+
+                const dragEndEvent = new DragEvent('dragend', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: endX,
+                    clientY: endY,
+                    dataTransfer: dragStartEvent.dataTransfer
+                });
+                startEl.dispatchEvent(dragEndEvent);
+
+                return true;
+            }
+            """,
+            [start_x, start_y, end_x, end_y]
+        )
+        await asyncio.sleep(0.2)
+
+    async def _perform_drag_drop_pointer(self, frame_challenge: Frame, path: SpatialPath):
+        """
+        Performs drag using Pointer Events API (unified mouse/touch/pen events).
+        This is the modern alternative to HTML5 DnD for better browser compatibility.
+        """
+        start_x, start_y, end_x, end_y = await self._get_frame_relative_drag_points(
+            frame_challenge, path
+        )
+
+        await frame_challenge.evaluate(
+            """
+            ([startX, startY, endX, endY]) => {
+                const startEl = document.elementFromPoint(startX, startY);
+                const endEl = document.elementFromPoint(endX, endY);
+
+                if (!startEl || !endEl) {
+                    console.error('Could not find elements at drag positions');
+                    return false;
+                }
+
+                // Pointer events sequence
+                const pointerDownEvent = new PointerEvent('pointerdown', {
+                    bubbles: true,
+                    cancelable: true,
+                    pointerId: 1,
+                    clientX: startX,
+                    clientY: startY,
+                    button: 0,
+                    buttons: 1
+                });
+                startEl.dispatchEvent(pointerDownEvent);
+
+                // Simulate pointer move through intermediate points
+                const steps = 10;
+                for (let i = 1; i <= steps; i++) {
+                    const progress = i / steps;
+                    const curX = startX + (endX - startX) * progress;
+                    const curY = startY + (endY - startY) * progress;
+
+                    const pointerMoveEvent = new PointerEvent('pointermove', {
+                        bubbles: true,
+                        cancelable: true,
+                        pointerId: 1,
+                        clientX: curX,
+                        clientY: curY,
+                        button: 0,
+                        buttons: 1
+                    });
+                    document.dispatchEvent(pointerMoveEvent);
+                }
+
+                const pointerUpEvent = new PointerEvent('pointerup', {
+                    bubbles: true,
+                    cancelable: true,
+                    pointerId: 1,
+                    clientX: endX,
+                    clientY: endY,
+                    button: 0,
+                    buttons: 0
+                });
+                document.dispatchEvent(pointerUpEvent);
+
+                return true;
+            }
+            """,
+            [start_x, start_y, end_x, end_y]
+        )
+        await asyncio.sleep(0.2)
+
+    async def _inspect_hcaptcha_drag_elements(self, frame):
+        """Inspect hCaptcha's draggable elements and their event listeners"""
+        logger.debug("Inspecting hCaptcha drag elements...")
+
+        inspection_result = await frame.evaluate("""
+            () => {
+                const results = {
+                    draggables: [],
+                    eventListeners: {},
+                    canvasElements: [],
+                    touchAction: []
+                };
+
+                // Find all elements with drag-related styles or attributes
+                const allElements = document.querySelectorAll('*');
+                allElements.forEach(el => {
+                    const computedStyle = window.getComputedStyle(el);
+                    const hasDrag = computedStyle.cursor === 'grab' ||
+                                     computedStyle.cursor === 'move' ||
+                                     computedStyle.cursor === 'pointer' ||
+                                     el.getAttribute('draggable') === 'true';
+
+                    if (hasDrag) {
+                        results.draggables.push({
+                            tag: el.tagName,
+                            id: el.id,
+                            class: el.className,
+                            cursor: computedStyle.cursor,
+                            draggable: el.getAttribute('draggable'),
+                            position: {
+                                x: el.offsetLeft,
+                                y: el.offsetTop,
+                                width: el.offsetWidth,
+                                height: el.offsetHeight
+                            },
+                            dataAttrs: Array.from(el.attributes)
+                                .filter(a => a.name.startsWith('data-'))
+                                .map(a => `${a.name}=${a.value}`)
+                        });
+                    }
+
+                    // Check for touch-action
+                    if (computedStyle.touchAction !== 'auto') {
+                        results.touchAction.push({
+                            tag: el.tagName,
+                            class: el.className,
+                            touchAction: computedStyle.touchAction
+                        });
+                    }
+
+                    // Check for canvas elements
+                    if (el.tagName === 'CANVAS') {
+                        results.canvasElements.push({
+                            id: el.id,
+                            class: el.className,
+                            width: el.width,
+                            height: el.height
+                        });
+                    }
+                });
+
+                // Try to get event listeners if available (Chrome devtools)
+                if (typeof getEventListeners === 'function') {
+                    results.draggables.forEach(el => {
+                        const domEl = document.querySelector(
+                            el.id ? `#${el.id}` :
+                            el.class ? `.${el.class.split(' ')[0]}` :
+                            el.tag
+                        );
+                        if (domEl) {
+                            results.eventListeners[el.id || el.class] = getEventListeners(domEl);
+                        }
+                    });
+                }
+
+                return results;
+            }
+        """)
+
+        logger.debug(f"Drag elements inspection: {inspection_result}")
+        return inspection_result
+
     async def challenge_image_label_binary(self):
         frame_challenge = await self.get_challenge_frame_locator()
         crumb_count = await self.check_crumb_count()
@@ -710,11 +1093,135 @@ class RoboticArm:
             raw, projection = await self._capture_spatial_mapping(frame_challenge, cache_key, cid)
 
             user_prompt = self._match_user_prompt(job_type)
+            extra_images: List[Path] | None = None
+            cropped_raw = raw  # Default to uncropped image
+
+            # Get task and check if it's a compare/matching puzzle
+            task = None
+            is_compare_puzzle = False
+            is_tube_puzzle = False
+            if (
+                self.captcha_payload
+                and cid < len(self.captcha_payload.tasklist)
+                and (task := self.captcha_payload.tasklist[cid])
+                and task.entities
+            ):
+                # Heuristic: if entities have entity_uri, it's likely a compare/matching puzzle
+                is_compare_puzzle = any(ent.entity_uri for ent in task.entities)
+
+                # Detect tube/pipe challenges: entities on the right side are draggable SOURCE pieces
+                # Compare puzzles have targets on the left, tube puzzles have sources on the right
+                question = self.captcha_payload.get_requester_question()
+                if is_compare_puzzle and question:
+                    # Tube challenge keywords in the question
+                    is_tube_by_question = any(
+                        kw in question.lower()
+                        for kw in ["pipe", "tube", "reach the other side"]
+                    )
+                    # All entities are on the right side (x > 350) → they are sources, not targets
+                    entity_coords = [
+                        ent.coords for ent in task.entities
+                        if ent.coords and len(ent.coords) >= 1
+                    ]
+                    # all([]) is True → require a non-empty list, otherwise every compare
+                    # puzzle whose entities lack coords would be misclassified as tube
+                    is_tube_by_position = bool(entity_coords) and all(
+                        coords[0] > 350 for coords in entity_coords
+                    )
+                    is_tube_puzzle = is_tube_by_question or is_tube_by_position
+                    if is_tube_puzzle:
+                        is_compare_puzzle = False
+                        logger.debug(f"Detected tube/pipe puzzle: question='{question}', entities on right side")
+
+            # Enhance prompt when challenge has target entities with reference icons
+            # Only do this for compare/matching puzzles (where entity_uri provides reference icons)
+            # For connection/assembly puzzles (like pipe connection), entity images are not needed
+            if is_compare_puzzle:
+                entity_count = len(task.entities)
+                entity_positions = []
+                for i, ent in enumerate(task.entities):
+                    if ent.coords and len(ent.coords) >= 2:
+                        entity_positions.append(
+                            f"目标 {i+1}: 位置({ent.coords[0]},{ent.coords[1]}), 显示参考图标"
+                        )
+                if entity_positions:
+                    if entity_count > 1:
+                        user_prompt += (
+                            f"\n\n注意：共有{entity_count}个目标位置显示参考图标，"
+                            f"请返回所有匹配的拖放操作，每个匹配对应一个path。"
+                            f"不匹配的物体不要拖动。目标位置：\n"
+                        )
+                    else:
+                        user_prompt += (
+                            f"\n\n注意：{entity_positions[0]}，"
+                            f"请拖放匹配的物体到该位置。"
+                        )
+                    user_prompt += "\n".join(entity_positions)
+                logger.debug(f"Enhanced drag prompt for {entity_count} target entity(ies)")
+
+                # Crop the image to exclude the right side (draggable elements) to fix LLM source/target swap
+                # Only do this for single-entity compare puzzles where we have the entity center to map coordinates
+                # For connection/assembly puzzles or multi-entity, keep full image
+                from PIL import Image
+                cropped_raw = raw
+                should_crop = len(task.entities) == 1  # Only crop single-entity challenges
+                if should_crop:
+                    try:
+                        img = Image.open(raw)
+                        width, height = img.size
+                        # Crop to keep left side (target area) - exclude right side where draggable elements are
+                        # Based on entity coords around 436, we'll keep x from 0 to 500
+                        crop_x = 500
+                        if width > crop_x:
+                            cropped_img = img.crop((0, 0, crop_x, height))
+                            cropped_raw = cache_key.joinpath(f"{cache_key.name}_{cid}_cropped.png")
+                            cropped_img.save(cropped_raw)
+                            logger.debug(f"Cropped image from {width}x{height} to {crop_x}x{height}, saved to {cropped_raw}")
+                    except Exception as e:
+                        logger.warning(f"Failed to crop image: {e}, using original")
+                        cropped_raw = raw
+
+                # Extract entity images directly from the browser (already loaded, no HTTP download needed)
+                try:
+                    extra_images_dir = cache_key.joinpath("entity_images")
+                    extra_images_dir.mkdir(exist_ok=True)
+                    extra_images = []
+                    for i, ent in enumerate(task.entities):
+                        if ent.entity_uri:
+                            entity_path = extra_images_dir / f"entity_{i}.png"
+
+                            # Extract raw image data from the browser via canvas-based base64 encoding
+                            # This avoids URL expiry issues and captures exactly what the user sees
+                            image_data = await frame_challenge.evaluate(
+                                """(imageUrl) => {
+                                    return new Promise((resolve, reject) => {
+                                        const img = document.querySelector(`img[src*="${imageUrl}"]`);
+                                        if (!img) {
+                                            reject(new Error('Image not found in DOM: ' + imageUrl));
+                                            return;
+                                        }
+                                        const canvas = document.createElement('canvas');
+                                        canvas.width = img.naturalWidth;
+                                        canvas.height = img.naturalHeight;
+                                        const ctx = canvas.getContext('2d');
+                                        ctx.drawImage(img, 0, 0);
+                                        resolve(canvas.toDataURL('image/png').split(',')[1]);
+                                    });
+                                }""",
+                                ent.entity_uri,
+                            )
+                            entity_path.write_bytes(base64.b64decode(image_data))
+                            extra_images.append(entity_path)
+                            logger.debug(f"Extracted entity image {i} from browser: {entity_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to extract entity images from browser: {e}")
+                    extra_images = None
 
             response = await self._spatial_path_reasoner(
-                challenge_screenshot=raw,
+                challenge_screenshot=cropped_raw if 'cropped_raw' in locals() else raw,
                 grid_divisions=projection,
                 auxiliary_information=user_prompt,
+                extra_images=extra_images,
                 request_debug_path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_request.json") if self.config.enable_model_debug_caching else None,
             )
             logger.debug(f'[{cid+1}/{crumb_count}]ToolInvokeMessage: {response.log_message}')
@@ -723,13 +1230,126 @@ class RoboticArm:
                     path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_answer.json")
                 )
 
-            for path in response.paths:
-                await self._perform_drag_drop(path)
+            # Get challenge bbox for coordinate translation (needed for all drag types)
+            challenge_view = frame_challenge.locator("//div[@class='challenge-view']")
+            bbox = await challenge_view.bounding_box()
+
+            # Snap LLM drag endpoints to known entity geometry (ground truth from the
+            # captcha payload). Entity coords are image-relative → convert to webpage.
+            # - non-compare puzzles (tube, single-entity): entities are drag SOURCES
+            #   → snap start_point to the nearest entity center
+            # - compare puzzles (plates/destinations): entities are drop TARGETS
+            #   → snap end_point to the nearest entity center
+            entity_centers: List[Tuple[int, int]] = []
+            if task and task.entities and bbox:
+                for ent in task.entities:
+                    if (
+                        ent.coords
+                        and len(ent.coords) >= 2
+                        and ent.size
+                        and len(ent.size) >= 2
+                    ):
+                        entity_centers.append(
+                            (
+                                int(bbox["x"] + ent.coords[0] + ent.size[0] // 2),
+                                int(bbox["y"] + ent.coords[1] + ent.size[1] // 2),
+                            )
+                        )
+                if entity_centers:
+                    logger.debug(f"Entity centers (webpage): {entity_centers}")
+
+            def _nearest_entity_center(
+                pt: Tuple[int, int] | None, radius: float
+            ) -> Tuple[int, int] | None:
+                """Entity center nearest to pt, or None when beyond radius."""
+                if not pt or not entity_centers:
+                    return None
+                nearest = min(
+                    entity_centers,
+                    key=lambda c: (c[0] - pt[0]) ** 2 + (c[1] - pt[1]) ** 2,
+                )
+                if math.hypot(nearest[0] - pt[0], nearest[1] - pt[1]) <= radius:
+                    return nearest
+                return None
+
+            # Single-entity non-compare challenges ("drag the shape to the center"):
+            # the sole entity IS the draggable → unconditional start correction.
+            corrected_start = (
+                entity_centers[0]
+                if len(entity_centers) == 1 and not is_compare_puzzle
+                else None
+            )
+            if corrected_start:
+                logger.debug(f"Entity correction: webpage_start={corrected_start}")
+
+            snap_radius = self.config.ENTITY_SNAP_RADIUS
+            paths_count = len(response.paths) if response.paths else 0
+            logger.debug(f"LLM returned {paths_count} drag paths for task {cid+1}/{crumb_count}")
+            for idx, path in enumerate(response.paths):
+                logger.debug(f"Executing drag path {idx+1}/{paths_count}: {path}")
+                llm_start = (int(path.start_point.x), int(path.start_point.y)) if path.start_point else None
+                llm_end = (int(path.end_point.x), int(path.end_point.y)) if path.end_point else None
+
+                snapped_start = corrected_start
+                if snapped_start is None and entity_centers and not is_compare_puzzle:
+                    snapped_start = _nearest_entity_center(llm_start, snap_radius)
+                if snapped_start:
+                    if snapped_start != llm_start:
+                        logger.debug(f"Snapped start {llm_start} -> {snapped_start}")
+                    path.start_point.x, path.start_point.y = snapped_start
+
+                snapped_end = None
+                if entity_centers and is_compare_puzzle:
+                    snapped_end = _nearest_entity_center(llm_end, snap_radius)
+                    if snapped_end:
+                        if snapped_end != llm_end:
+                            logger.debug(f"Snapped end {llm_end} -> {snapped_end}")
+                        path.end_point.x, path.end_point.y = snapped_end
+
+                # Save debug overlay before performing drag
+                if bbox:
+                    entity_center_abs = (
+                        snapped_start
+                        or snapped_end
+                        or _nearest_entity_center(
+                            llm_end if is_compare_puzzle else llm_start, float("inf")
+                        )
+                    )
+                    overlay_path = cache_key.joinpath(f"{cache_key.name}_{cid}_drag_debug_overlay.png")
+                    self._save_drag_debug_overlay(
+                        screenshot_path=raw,
+                        output_path=overlay_path,
+                        bbox=bbox,
+                        entity_center=entity_center_abs,
+                        llm_start=llm_start,
+                        llm_end=llm_end,
+                        corrected_start=snapped_start,
+                    )
+
+                if self.config.USE_POINTER_EVENTS:
+                    logger.debug("Using Pointer Events API")
+                    await self._perform_drag_drop_pointer(frame_challenge, path)
+                elif self.config.USE_HTML5_DRAG:
+                    logger.debug("Using HTML5 Drag and Drop API")
+                    await self._perform_drag_drop_html5(frame_challenge, path)
+                else:
+                    logger.debug("Using mouse simulation drag")
+                    await self._perform_drag_drop(path)
+
+                # Add delay between drags for multi-entity challenges to ensure hCaptcha detects each one
+                if paths_count > 1 and idx < paths_count - 1:
+                    logger.debug(f"Waiting {0.3}s before next drag (multi-entity challenge)")
+                    await asyncio.sleep(0.3)
 
             # {{< Verify >}}
             with suppress(TimeoutError):
                 submit_btn = frame_challenge.locator("//div[@class='button-submit button']")
-                await self.click_by_mouse(submit_btn)
+                btn_text = await submit_btn.text_content()
+                logger.debug(f"Challenge submit button text: '{btn_text}'")
+                if btn_text and "skip" in btn_text.lower():
+                    logger.warning("Button shows 'Skip' - drag may not have been detected. Not clicking Skip.")
+                else:
+                    await self.click_by_mouse(submit_btn)
 
     async def challenge_image_label_select(self, job_type: ChallengeTypeEnum):
         frame_challenge = await self.get_challenge_frame_locator()
@@ -755,9 +1375,20 @@ class RoboticArm:
                     path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_answer.json")
                 )
 
-            for point in response.points:
-                await self.page.mouse.click(point.x, point.y, delay=180)
-                await self.page.wait_for_timeout(500)
+            # Convert webpage-absolute coordinates (from LLM/grid) to challenge-view-relative
+            challenge_view = frame_challenge.locator("//div[@class='challenge-view']")
+            bbox = await challenge_view.bounding_box()
+            if bbox:
+                for point in response.points:
+                    rel_x = int(point.x - bbox["x"])
+                    rel_y = int(point.y - bbox["y"])
+                    await challenge_view.click(position={"x": rel_x, "y": rel_y}, delay=180)
+                    await self.page.wait_for_timeout(500)
+            else:
+                # Fallback to absolute coordinates if bbox unavailable
+                for point in response.points:
+                    await self.page.mouse.click(point.x, point.y, delay=180)
+                    await self.page.wait_for_timeout(500)
 
             # {{< Verify >}}
             with suppress(TimeoutError):
@@ -777,6 +1408,7 @@ class AgentV:
         self._captcha_payload_queue: Queue[CaptchaPayload | None] = Queue()
         self._captcha_response_queue: Queue[CaptchaResponse] = Queue()
         self.cr_list: List[CaptchaResponse] = []
+        self._challenge_count: int = 0  # Track challenges for MAX_CHALLENGES limit
 
         self.page.on("response", self._task_handler)
 
@@ -921,20 +1553,34 @@ class AgentV:
                     )
                 case RequestType.IMAGE_DRAG_DROP:
                     self.robotic_arm.signal_crumb_count = tasklist_length
+                    if not tasklist or len(tasklist) == 0:
+                        logger.error("IMAGE_DRAG_DROP: empty tasklist")
+                        raise ValueError("Empty tasklist for drag challenge")
+                    entities = tasklist[0].entities or []
+                    entity_count = len(entities)
+                    logger.debug(f"IMAGE_DRAG_DROP: tasklist_len={tasklist_length}, entities={entity_count}")
                     return (
                         ChallengeTypeEnum.IMAGE_DRAG_SINGLE
-                        if len(tasklist[0].entities) == 1
+                        if entity_count == 1
                         else ChallengeTypeEnum.IMAGE_DRAG_MULTI
                     )
 
             logger.warning(f"Unknown request_type: {request_type=}")
         except Exception as err:
-            logger.error(f"Error parsing challenge type: {err}")
+            logger.exception(f"Error parsing challenge type: {err}")
 
         # Fallback to visual recognition solution
         return await self.robotic_arm.check_challenge_type()
 
     async def _solve_captcha(self):
+        self._challenge_count += 1
+        if self._challenge_count > self.config.MAX_CHALLENGES:
+            logger.warning(
+                f"MAX_CHALLENGES limit ({self.config.MAX_CHALLENGES}) exceeded. "
+                "Aborting to protect API credits."
+            )
+            raise RuntimeError(f"MAX_CHALLENGES limit ({self.config.MAX_CHALLENGES}) reached")
+
         challenge_type = await self._review_challenge_type()
         logger.debug(
             f"Start Challenge - type={challenge_type.value} count={self.robotic_arm.signal_crumb_count}"
@@ -1021,6 +1667,41 @@ class AgentV:
             )
         except asyncio.TimeoutError:
             logger.error(f"Wait for captcha response timeout {self.config.RESPONSE_TIMEOUT}s")
+
+            # Debug dump: capture page state to investigate why no response was received
+            try:
+                debug_ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                debug_dir = self.config.challenge_dir.joinpath("_timeout_debug", debug_ts)
+                debug_dir.mkdir(parents=True, exist_ok=True)
+
+                # Save full page screenshot
+                screenshot_path = debug_dir.joinpath("page_screenshot.png")
+                await self.page.screenshot(path=str(screenshot_path), full_page=False)
+
+                # Save page HTML
+                html_path = debug_dir.joinpath("page_content.html")
+                html_content = await self.page.content()
+                html_path.write_text(html_content, encoding="utf-8")
+
+                # Save challenge frame HTML if available
+                try:
+                    frame_challenge = await self.get_challenge_frame_locator()
+                    frame_html_path = debug_dir.joinpath("challenge_frame.html")
+                    frame_html = await frame_challenge.page.content()
+                    frame_html_path.write_text(frame_html, encoding="utf-8")
+                except Exception:
+                    pass
+
+                logger.debug(f"Timeout debug state saved to: {debug_dir}")
+            except Exception as dump_err:
+                logger.warning(f"Failed to save timeout debug state: {dump_err}")
+
+            # Treat timeout-as-no-response as failure and retry if enabled
+            # (hCaptcha may still be showing a challenge that wasn't solved)
+            if self.config.RETRY_ON_FAILURE:
+                logger.warning("Challenge response timeout, treating as failure and retrying")
+                await self.page.wait_for_timeout(2000)
+                return await self.wait_for_challenge()
             return ChallengeSignal.EXECUTION_TIMEOUT
         else:
             # Match: Timeout / Loss

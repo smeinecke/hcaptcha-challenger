@@ -1,4 +1,6 @@
 # yaml-language-server: $schema=./rules.schema.json
+# NOTE: `triggers` within one rule are ANDed (every substring must appear in the
+# challenge prompt). Add separate rules for OR alternatives.
 version: "0.1.0"
 base_url: "https://raw.githubusercontent.com/QIN2DIM/hcaptcha-challenger/main/src/hcaptcha_challenger/skills/library"
 rules:
@@ -10,11 +12,27 @@ rules:
     job_type: "image_drag_single"
     template: "drag_object_to_shadow_v3_cn.md"
 
-  - triggers: ["pairs"]
+  - triggers: ["shadow"]
+    job_type: "image_drag_single"
+    template: "drag_object_to_shadow_v3_cn.md"
+
+  - triggers: ["pair"]
     job_type: "image_drag_multi"
     template: "drag_pairs.md"
 
-  - triggers: ["correct fragment", "matching half", "complete the gear", "complete the image"]
+  - triggers: ["correct fragment"]
+    job_type: "image_drag_multi"
+    template: "drag_fragment_fit.md"
+
+  - triggers: ["matching half"]
+    job_type: "image_drag_multi"
+    template: "drag_fragment_fit.md"
+
+  - triggers: ["complete the gear"]
+    job_type: "image_drag_multi"
+    template: "drag_fragment_fit.md"
+
+  - triggers: ["complete the image"]
     job_type: "image_drag_multi"
     template: "drag_fragment_fit.md"
 
@@ -22,6 +40,23 @@ rules:
     job_type: "image_label_multi_select"
     template: "label_holes.md"
 
-  - triggers: ["Please drag the eagle to the tree it is connected to"]
+  - triggers: ["eagle", "connected"]
     job_type: "image_drag_single"
     template: "drag_connection.md"
+
+  # generic "drag X to the Y it is connected to" line-tracing family
+  - triggers: ["connected to"]
+    job_type: "image_drag_single"
+    template: "drag_connection.md"
+
+  - triggers: ["pipe"]
+    job_type: "image_drag_multi"
+    template: "drag_tube_connection.md"
+
+  - triggers: ["tube"]
+    job_type: "image_drag_multi"
+    template: "drag_tube_connection.md"
+
+  - triggers: ["reach the other side"]
+    job_type: "image_drag_multi"
+    template: "drag_tube_connection.md"

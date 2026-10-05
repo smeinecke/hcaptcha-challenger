@@ -6,7 +6,7 @@ This tool analyzes images to identify which draggable element should be
 moved to which target location based on visual patterns and implicit matching rules.
 """
 from pathlib import Path
-from typing import Union
+from typing import List, Union
 
 from hcaptcha_challenger.models import ImageDragDropChallenge
 from hcaptcha_challenger.tools.spatial.base import SpatialReasoner
@@ -32,6 +32,7 @@ class SpatialPathReasoner(SpatialReasoner[ImageDragDropChallenge]):
         challenge_screenshot: Union[str, Path],
         grid_divisions: Union[str, Path],
         auxiliary_information: str | None = None,
+        extra_images: List[Path] | None = None,
         **kwargs,
     ) -> ImageDragDropChallenge:
         """
@@ -42,6 +43,7 @@ class SpatialPathReasoner(SpatialReasoner[ImageDragDropChallenge]):
             grid_divisions: Path to the grid overlay image.
             auxiliary_information: Optional challenge prompt or context.
             thinking_level: Thinking level for the model (default: HIGH).
+            extra_images: Optional list of additional reference images (e.g., entity icons).
             **kwargs: Additional options passed to the provider.
 
         Returns:
@@ -52,5 +54,6 @@ class SpatialPathReasoner(SpatialReasoner[ImageDragDropChallenge]):
             grid_divisions=Path(grid_divisions),
             auxiliary_information=auxiliary_information,
             response_schema=ImageDragDropChallenge,
+            extra_images=extra_images,
             **kwargs,
         )
