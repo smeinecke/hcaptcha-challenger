@@ -10,6 +10,7 @@ import pytest
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from hcaptcha_challenger.agent.challenger import (
+    OPENAI_COMPATIBLE_PROVIDERS,
     AgentV,
     RoboticArm,
     _datapoint_offset_scale,
@@ -167,6 +168,64 @@ class TestRetryPredicate:
     def test_input_errors_not_retried(self):
         assert _is_retryable(ValueError("No valid images provided")) is False
         assert _is_retryable(KeyError("x")) is False
+
+
+class TestProviderPresets:
+    def _agent(self, provider, llm_key=None, base_url=None, **keys):
+        from pydantic import SecretStr
+
+        agent = object.__new__(RoboticArm)
+        cfg = {
+            "LLM_PROVIDER": provider,
+            "LLM_API_KEY": SecretStr(llm_key) if llm_key else None,
+            "LLM_BASE_URL": base_url,
+            "GEMINI_API_KEY": SecretStr("gem-key"),
+            "NVIDIA_API_KEY": SecretStr(keys.get("nvidia_key", "nv-key")),
+            "ZAI_API_KEY": SecretStr(keys.get("zai_key", "zai-key")),
+            "OPENROUTER_API_KEY": SecretStr(keys.get("or_key", "or-key")),
+            "OPENAI_ENABLE_LOGGING": False,
+            "LLM_REQUEST_TIMEOUT": 60.0,
+            "LLM_MODEL": None,
+        }
+        agent.config = SimpleNamespace(**cfg)
+        return agent
+
+    def test_zai_preset(self):
+        p = self._agent("zai")._create_provider("glm-4.6v-flash")
+        assert p._base_url == "https://api.z.ai/api/paas/v4"
+        assert p._api_key == "zai-key"  # provider-specific key wins over gemini
+
+    def test_nvidia_and_nim_alias(self):
+        for name in ("nvidia", "nim"):
+            p = self._agent(name)._create_provider("m")
+            assert p._base_url == "https://integrate.api.nvidia.com/v1"
+            assert p._api_key == "nv-key"
+
+    def test_llm_api_key_takes_priority(self):
+        p = self._agent("zai", llm_key="primary")._create_provider("m")
+        assert p._api_key == "primary"
+
+    def test_base_url_override_wins(self):
+        p = self._agent("zai", base_url="http://local:1/v1")._create_provider("m")
+        assert p._base_url == "http://local:1/v1"
+
+    def test_ollama_needs_no_key(self):
+        p = self._agent("ollama", nvidia_key="", zai_key="", or_key="")._create_provider("m")
+        assert p._base_url == "http://localhost:11434/v1"
+
+    def test_gemini_returns_none(self):
+        assert self._agent("gemini")._create_provider("m") is None
+        assert self._agent("bogus")._create_provider("m") is None
+
+    def test_preset_map_complete(self):
+        assert set(OPENAI_COMPATIBLE_PROVIDERS) >= {
+            "openai",
+            "openrouter",
+            "zai",
+            "nvidia",
+            "nim",
+            "ollama",
+        }
 
 
 class TestDragMechanismOrder:

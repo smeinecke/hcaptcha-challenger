@@ -204,6 +204,25 @@ def _entity_centers_webpage(
 SINGLE_IGNORE_TYPE = IGNORE_REQUEST_TYPE_LITERAL | RequestType | ChallengeTypeEnum
 IGNORE_REQUEST_TYPE_LIST = list[SINGLE_IGNORE_TYPE]
 
+# OpenAI-compatible provider presets — usable as `LLM_PROVIDER` names.
+# `LLM_BASE_URL` always overrides the preset when set.
+OPENAI_COMPATIBLE_PROVIDERS: dict[str, str | None] = {
+    "openai": None,  # SDK default (api.openai.com)
+    "openrouter": "https://openrouter.ai/api/v1",
+    "zai": "https://api.z.ai/api/paas/v4",
+    "nvidia": "https://integrate.api.nvidia.com/v1",
+    "nim": "https://integrate.api.nvidia.com/v1",  # alias
+    "ollama": "http://localhost:11434/v1",
+}
+
+# Provider name -> AgentConfig field holding its dedicated key.
+_PROVIDER_KEY_FIELDS = {
+    "nvidia": "NVIDIA_API_KEY",
+    "nim": "NVIDIA_API_KEY",
+    "zai": "ZAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+
 
 class AgentConfig(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
@@ -217,15 +236,30 @@ class AgentConfig(BaseSettings):
     # == Modular LLM Provider Configuration == #
     LLM_PROVIDER: str = Field(
         default="gemini",
-        description="LLM provider to use: 'gemini' or 'openai' (OpenAI-compatible)",
+        description=(
+            "LLM provider: 'gemini' or an OpenAI-compatible name: 'openai', "
+            "'openrouter', 'zai', 'nvidia'/'nim', 'ollama'."
+        ),
     )
     LLM_API_KEY: SecretStr | None = Field(
         default=None,
         description="API key for the selected LLM provider. If not set, uses GEMINI_API_KEY for Gemini provider.",
     )
+    NVIDIA_API_KEY: SecretStr | None = Field(
+        default=None,
+        description="API key for NVIDIA NIM — https://build.nvidia.com (LLM_PROVIDER=nvidia).",
+    )
+    ZAI_API_KEY: SecretStr | None = Field(
+        default=None,
+        description="API key for z.ai GLM models — https://z.ai (LLM_PROVIDER=zai).",
+    )
+    OPENROUTER_API_KEY: SecretStr | None = Field(
+        default=None,
+        description="API key for OpenRouter (LLM_PROVIDER=openrouter).",
+    )
     LLM_BASE_URL: str | None = Field(
         default=None,
-        description="Base URL for OpenAI-compatible APIs (e.g., https://openrouter.ai/api/v1)",
+        description="Base URL for OpenAI-compatible APIs — overrides the provider preset when set.",
     )
     LLM_MODEL: str | None = Field(
         default=None,
@@ -373,14 +407,20 @@ class AgentConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _require_any_api_key(self) -> "AgentConfig":
-        gemini_key = self.GEMINI_API_KEY.get_secret_value()
-        llm_key = self.LLM_API_KEY.get_secret_value() if self.LLM_API_KEY else ""
-        if not gemini_key and not llm_key:
+        provider = self.LLM_PROVIDER.lower()
+        keys = [
+            self.GEMINI_API_KEY,
+            self.LLM_API_KEY,
+            self.NVIDIA_API_KEY,
+            self.ZAI_API_KEY,
+            self.OPENROUTER_API_KEY,
+        ]
+        if provider != "ollama" and not any(k and k.get_secret_value() for k in keys):
             raise ValueError(
                 "An LLM API key is required. Set GEMINI_API_KEY or LLM_API_KEY. "
                 "Create API Key -> https://aistudio.google.com/app/apikey"
             )
-        if self.LLM_PROVIDER.lower() == "gemini" and not gemini_key:
+        if provider == "gemini" and not self.GEMINI_API_KEY.get_secret_value():
             raise ValueError(
                 "GEMINI_API_KEY is required when LLM_PROVIDER=gemini. "
                 "Create API Key -> https://aistudio.google.com/app/apikey"
@@ -484,9 +524,20 @@ class RoboticArm:
 
     def _get_api_key(self) -> str:
         """Get the API key based on provider configuration."""
-        if self.config.LLM_PROVIDER.lower() == "openai":
-            return (self.config.LLM_API_KEY or self.config.GEMINI_API_KEY).get_secret_value()
-        return self.config.GEMINI_API_KEY.get_secret_value()
+        provider = self.config.LLM_PROVIDER.lower()
+        if provider == "gemini":
+            return self.config.GEMINI_API_KEY.get_secret_value()
+        if provider == "ollama":
+            return "ollama"  # local server, no key required
+        candidates = [self.config.LLM_API_KEY]
+        key_field = _PROVIDER_KEY_FIELDS.get(provider)
+        if key_field:
+            candidates.append(getattr(self.config, key_field))
+        candidates.append(self.config.GEMINI_API_KEY)
+        for cand in candidates:
+            if cand and cand.get_secret_value():
+                return cand.get_secret_value()
+        return ""
 
     def _get_model(self, default_model: str) -> str:
         """Get the model name, using override if set."""
@@ -496,14 +547,15 @@ class RoboticArm:
         """Create the LLM provider for one reasoner role."""
         provider_type = self.config.LLM_PROVIDER.lower()
 
-        if provider_type == "openai":
+        if provider_type in OPENAI_COMPATIBLE_PROVIDERS:
             api_key = self._get_api_key()
             if not api_key:
                 raise ValueError("API key is required. Set LLM_API_KEY or GEMINI_API_KEY.")
+            base_url = self.config.LLM_BASE_URL or OPENAI_COMPATIBLE_PROVIDERS[provider_type]
             return OpenAIProvider(
                 api_key=api_key,
                 model=model,
-                base_url=self.config.LLM_BASE_URL,
+                base_url=base_url,
                 enable_logging=self.config.OPENAI_ENABLE_LOGGING,
                 request_timeout=self.config.LLM_REQUEST_TIMEOUT,
             )
