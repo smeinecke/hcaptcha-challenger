@@ -55,7 +55,12 @@ def extract_first_json_block(text: str) -> dict | None:
     pattern = r"```json\s*([\s\S]*?)```"
     matches = re.findall(pattern, text)
     if matches:
-        return json.loads(matches[0])
+        try:
+            return json.loads(matches[0])
+        except json.JSONDecodeError:
+            # Model fenced malformed JSON — caller raises the wrapped,
+            # retryable parse error instead of leaking JSONDecodeError.
+            return None
     return None
 
 

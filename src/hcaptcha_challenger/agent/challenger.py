@@ -16,8 +16,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import cv2
+import httpx
 import matplotlib.pyplot as plt
 import msgpack
+import numpy as np
 from loguru import logger
 from PIL import Image, ImageDraw
 from playwright.async_api import (
@@ -135,21 +138,64 @@ def _nearest_entity_center(
     return None
 
 
-def _entity_centers_webpage(task, bbox: dict | None) -> list[tuple[int, int]]:
+def _datapoint_offset_scale(
+    challenge_img: "np.ndarray", datapoint_img: "np.ndarray"
+) -> tuple[int, int, float] | None:
+    """
+    Locate the datapoint (puzzle scene) image inside the challenge-view image.
+
+    The datapoint (e.g. 480×320) is painted inside the 500×470 view below the
+    prompt header — its placement varies with header height, so it must be
+    measured rather than assumed. Returns (offset_x, offset_y, scale) in
+    challenge-image pixels, or None if no confident match.
+    """
+    best = None
+    for scale in (1.0, 2.0, 0.5):
+        w = int(datapoint_img.shape[1] * scale)
+        h = int(datapoint_img.shape[0] * scale)
+        if w < 40 or h < 40 or w > challenge_img.shape[1] or h > challenge_img.shape[0]:
+            continue
+        tmpl = datapoint_img if scale == 1.0 else cv2.resize(datapoint_img, (w, h))
+        res = cv2.matchTemplate(challenge_img, tmpl, cv2.TM_CCOEFF_NORMED)
+        _, score, _, loc = cv2.minMaxLoc(res)
+        if best is None or score > best[0]:
+            best = (score, loc[0], loc[1], scale)
+    if best and best[0] >= 0.6:
+        return best[1], best[2], best[3]
+    return None
+
+
+def _entity_centers_webpage(
+    task,
+    bbox: dict | None,
+    data_offset: tuple[int, int, float] | None,
+    img_size: tuple[int, int],
+) -> list[tuple[int, int]]:
     """
     Entity centers from the captcha payload converted to webpage coordinates.
 
-    Entity `coords` are the image-relative top-left corner; `size` is w×h.
+    Entity `coords` are the entity's *center* in datapoint-image space
+    (verified against live captures; `size` is the entity image's w×h).
+    The datapoint is placed inside the challenge view at `data_offset`
+    (x, y, scale in challenge-image pixels, measured via template matching);
+    the image itself may render at a different pixel density than the CSS
+    view, so positions are scaled by bbox/img_size.
     """
     centers: list[tuple[int, int]] = []
-    if not (task and task.entities and bbox):
+    if not (task and task.entities and bbox and data_offset):
         return centers
+    ox, oy, scale = data_offset
+    img_w, img_h = img_size
+    if not img_w or not img_h:
+        return centers
+    sx = bbox["width"] / img_w
+    sy = bbox["height"] / img_h
     for ent in task.entities:
-        if ent.coords and len(ent.coords) >= 2 and ent.size and len(ent.size) >= 2:
+        if ent.coords and len(ent.coords) >= 2:
             centers.append(
                 (
-                    int(bbox["x"] + ent.coords[0] + ent.size[0] // 2),
-                    int(bbox["y"] + ent.coords[1] + ent.size[1] // 2),
+                    int(bbox["x"] + (ox + ent.coords[0] * scale) * sx),
+                    int(bbox["y"] + (oy + ent.coords[1] * scale) * sy),
                 )
             )
     return centers
@@ -742,6 +788,39 @@ class RoboticArm:
 
         return challenge_screenshot, grid_divisions
 
+    async def _datapoint_view_offset(
+        self, task, raw: Path, cache_key: Path, cid: int | str
+    ) -> tuple[int, int, float] | None:
+        """
+        Download the task's datapoint (puzzle scene) image and locate it inside
+        the captured challenge image via template matching.
+
+        Returns (offset_x, offset_y, scale) in challenge-image pixels, or None.
+        """
+        uri = getattr(task, "datapoint_uri", None)
+        if not uri:
+            return None
+        try:
+            dp_path = cache_key.joinpath(f"{cache_key.name}_{cid}_datapoint")
+            if not dp_path.exists():
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.get(uri)
+                    resp.raise_for_status()
+                    dp_path.write_bytes(resp.content)
+            challenge_img = cv2.imread(str(raw))
+            dp_img = cv2.imread(str(dp_path))
+            if challenge_img is None or dp_img is None:
+                return None
+            offset = _datapoint_offset_scale(challenge_img, dp_img)
+            if offset:
+                logger.debug(f"Datapoint located at offset={offset} score>=0.6")
+            else:
+                logger.warning("Could not locate datapoint inside challenge view")
+            return offset
+        except Exception as err:  # noqa: BLE001
+            logger.warning(f"Datapoint offset detection failed: {err}")
+            return None
+
     def _save_drag_debug_overlay(
         self,
         screenshot_path: Path,
@@ -1194,102 +1273,71 @@ class RoboticArm:
             extra_images: list[Path] | None = None
             cropped_raw = raw  # Default to uncropped image
 
-            # Get task and check if it's a compare/matching puzzle
+            # Payload entities are always the draggable SOURCE pieces in the side
+            # tray (verified against live captures of all drag variants). Drop
+            # targets (cells, outlines, joints) are baked into the scene image
+            # and never appear as entities.
             task = None
-            is_compare_puzzle = False
-            is_tube_puzzle = False
+            has_source_entities = False
             if (
                 self.captcha_payload
                 and cid < len(self.captcha_payload.tasklist)
                 and (task := self.captcha_payload.tasklist[cid])
                 and task.entities
             ):
-                # Heuristic: if entities have entity_uri, it's likely a compare/matching puzzle
-                is_compare_puzzle = any(ent.entity_uri for ent in task.entities)
+                has_source_entities = True
+                # Tube/pipe prompts are handled by skill rules — tray position
+                # is not a reliable signal (right-side trays are also used by
+                # matching/screw variants).
 
-                # Detect tube/pipe challenges: entities on the right side are draggable SOURCE pieces
-                # Compare puzzles have targets on the left, tube puzzles have sources on the right
-                question = self.captcha_payload.get_requester_question()
-                if is_compare_puzzle and question:
-                    # Tube challenge keywords in the question
-                    is_tube_by_question = any(
-                        kw in question.lower() for kw in ["pipe", "tube", "reach the other side"]
-                    )
-                    # All entities in the right-side panel → they are sources, not targets.
-                    # Threshold is relative to image width (~right 30%).
-                    entity_coords = [
-                        ent.coords for ent in task.entities if ent.coords and len(ent.coords) >= 1
-                    ]
+            # Tell the model how many draggable pieces exist so it returns a
+            # single source→target path per needed drag instead of inventing
+            # extra drags.
+            if has_source_entities and len(task.entities) > 1:
+                user_prompt += (
+                    f"\n\n注意：侧边栏中有{len(task.entities)}个可拖拽图形，"
+                    f"请只拖动完成题目所需的那一个。"
+                )
+
+            data_offset = None
+            if has_source_entities:
+                # Datapoint (puzzle scene) placement inside the view — needed to
+                # map entity coords (datapoint space) to view/webpage coords.
+                data_offset = await self._datapoint_view_offset(task, raw, cache_key, cid)
+
+                # Single-entity challenges with the piece in the RIGHT-hand tray:
+                # crop the tray off the model's input so it focuses on the scene.
+                # Left trays are left alone — cropping the left would shift x
+                # coordinates and break the grid mapping.
+                if task.entities and len(task.entities) == 1 and data_offset:
                     try:
-                        img_w = Image.open(raw).size[0]
-                    except Exception:  # noqa: BLE001
-                        img_w = 500
-                    # all([]) is True → require a non-empty list, otherwise every compare
-                    # puzzle whose entities lack coords would be misclassified as tube
-                    is_tube_by_position = bool(entity_coords) and all(
-                        coords[0] > img_w * 0.7 for coords in entity_coords
-                    )
-                    is_tube_puzzle = is_tube_by_question or is_tube_by_position
-                    if is_tube_puzzle:
-                        is_compare_puzzle = False
-                        logger.debug(
-                            f"Detected tube/pipe puzzle: question='{question}', entities on right side"
-                        )
-
-            # Enhance prompt when challenge has target entities with reference icons
-            # Only do this for compare/matching puzzles (where entity_uri provides reference icons)
-            # For connection/assembly puzzles (like pipe connection), entity images are not needed
-            if is_compare_puzzle:
-                entity_count = len(task.entities)
-                entity_positions = []
-                for i, ent in enumerate(task.entities):
-                    if ent.coords and len(ent.coords) >= 2:
-                        entity_positions.append(
-                            f"目标 {i+1}: 位置({ent.coords[0]},{ent.coords[1]}), 显示参考图标"
-                        )
-                if entity_positions:
-                    if entity_count > 1:
-                        user_prompt += (
-                            f"\n\n注意：共有{entity_count}个目标位置显示参考图标，"
-                            f"请返回所有匹配的拖放操作，每个匹配对应一个path。"
-                            f"不匹配的物体不要拖动。目标位置：\n"
-                        )
-                    else:
-                        user_prompt += (
-                            f"\n\n注意：{entity_positions[0]}，" f"请拖放匹配的物体到该位置。"
-                        )
-                    user_prompt += "\n".join(entity_positions)
-                logger.debug(f"Enhanced drag prompt for {entity_count} target entity(ies)")
-
-                # Crop the image to exclude the right side (draggable elements) to fix LLM source/target swap
-                # Only do this for single-entity compare puzzles where we have the entity center to map coordinates
-                # For connection/assembly puzzles or multi-entity, keep full image
-                cropped_raw = raw
-                should_crop = len(task.entities) == 1  # Only crop single-entity challenges
-                if should_crop:
-                    try:
+                        ox, _oy, scale = data_offset
+                        ent = task.entities[0]
                         img = Image.open(raw)
                         width, height = img.size
-                        # Crop just past the rightmost target edge — entities are the
-                        # targets; fall back to the left ~70% when coords are missing.
-                        target_edges = [
-                            ent.coords[0] + ent.size[0]
-                            for ent in task.entities or []
-                            if ent.coords
-                            and len(ent.coords) >= 2
-                            and ent.size
-                            and len(ent.size) >= 1
-                        ]
-                        crop_x = (
-                            min(width, max(target_edges) + 24) if target_edges else int(width * 0.7)
-                        )
-                        if width > crop_x:
-                            cropped_img = img.crop((0, 0, crop_x, height))
-                            cropped_raw = cache_key.joinpath(f"{cache_key.name}_{cid}_cropped.png")
-                            cropped_img.save(cropped_raw)
-                            logger.debug(
-                                f"Cropped image from {width}x{height} to {crop_x}x{height}, saved to {cropped_raw}"
-                            )
+                        if ent.coords and len(ent.coords) >= 2:
+                            piece_cx = ox + ent.coords[0] * scale
+                            piece_w = (ent.size[0] if ent.size else 80) * scale
+                            if piece_cx > width * 0.6:
+                                crop_x = int(piece_cx - piece_w / 2 - 20)
+                                if width * 0.4 < crop_x < width:
+                                    cropped_raw = cache_key.joinpath(
+                                        f"{cache_key.name}_{cid}_cropped.png"
+                                    )
+                                    img.crop((0, 0, crop_x, height)).save(cropped_raw)
+                                    # crop the grid identically so model coords
+                                    # stay consistent between the two images
+                                    cropped_projection = cache_key.joinpath(
+                                        f"{cache_key.name}_{cid}_spatial_helper_cropped.png"
+                                    )
+                                    Image.open(projection).crop((0, 0, crop_x, height)).save(
+                                        cropped_projection
+                                    )
+                                    projection = cropped_projection
+                                    logger.debug(
+                                        f"Cropped right tray at x={crop_x} "
+                                        f"({width}x{height} -> {crop_x}x{height})"
+                                    )
                     except Exception as e:  # noqa: BLE001
                         logger.warning(f"Failed to crop image: {e}, using original")
                         cropped_raw = raw
@@ -1351,21 +1399,21 @@ class RoboticArm:
             challenge_view = frame_challenge.locator("//div[@class='challenge-view']")
             bbox = await challenge_view.bounding_box()
 
-            # Snap LLM drag endpoints to known entity geometry (ground truth from the
-            # captcha payload). Entity coords are image-relative → convert to webpage.
-            # - non-compare puzzles (tube, single-entity): entities are drag SOURCES
-            #   → snap start_point to the nearest entity center
-            # - compare puzzles (plates/destinations): entities are drop TARGETS
-            #   → snap end_point to the nearest entity center
-            entity_centers = _entity_centers_webpage(task, bbox)
+            # Snap the drag SOURCE to known entity geometry — payload entities
+            # are always the draggable pieces in the tray (ground truth).
+            # Drop targets are baked into the scene and never listed as
+            # entities, so there is no end-point snapping.
+            try:
+                img_size = Image.open(raw).size
+            except Exception:  # noqa: BLE001
+                img_size = (0, 0)
+            entity_centers = _entity_centers_webpage(task, bbox, data_offset, img_size)
             if entity_centers:
                 logger.debug(f"Entity centers (webpage): {entity_centers}")
 
-            # Single-entity non-compare challenges ("drag the shape to the center"):
-            # the sole entity IS the draggable → unconditional start correction.
-            corrected_start = (
-                entity_centers[0] if len(entity_centers) == 1 and not is_compare_puzzle else None
-            )
+            # Single-entity challenges: the sole entity IS the draggable →
+            # unconditional start correction.
+            corrected_start = entity_centers[0] if len(entity_centers) == 1 else None
             if corrected_start:
                 logger.debug(f"Entity correction: webpage_start={corrected_start}")
 
@@ -1377,25 +1425,16 @@ class RoboticArm:
                 corrected_start=corrected_start,
                 entity_centers=entity_centers,
                 snap_radius=snap_radius,
-                is_compare_puzzle=is_compare_puzzle,
             ) -> None:
-                """Snap a path's endpoints to known entity geometry, in place."""
+                """Snap a path's start to the nearest known draggable piece."""
                 llm_start = (path.start_point.x, path.start_point.y)
-                llm_end = (path.end_point.x, path.end_point.y)
-                snapped_start = corrected_start or (
-                    _nearest_entity_center(llm_start, entity_centers, snap_radius)
-                    if not is_compare_puzzle
-                    else None
+                snapped_start = corrected_start or _nearest_entity_center(
+                    llm_start, entity_centers, snap_radius
                 )
                 if snapped_start and snapped_start != llm_start:
                     logger.debug(f"Snapped start {llm_start} -> {snapped_start}")
                 if snapped_start:
                     path.start_point.x, path.start_point.y = snapped_start
-                if is_compare_puzzle:
-                    snapped_end = _nearest_entity_center(llm_end, entity_centers, snap_radius)
-                    if snapped_end and snapped_end != llm_end:
-                        logger.debug(f"Snapped end {llm_end} -> {snapped_end}")
-                        path.end_point.x, path.end_point.y = snapped_end
 
             # Original (pre-snap) endpoints, kept for the debug overlay
             originals = [
@@ -1453,9 +1492,7 @@ class RoboticArm:
                     llm_start, llm_end = originals[idx] if idx < len(originals) else (None, None)
                     final_start = (int(path.start_point.x), int(path.start_point.y))
                     entity_center_abs = _nearest_entity_center(
-                        llm_end if is_compare_puzzle else llm_start,
-                        entity_centers,
-                        float("inf"),
+                        llm_start, entity_centers, float("inf")
                     )
                     self._save_drag_debug_overlay(
                         screenshot_path=raw,
@@ -1466,7 +1503,7 @@ class RoboticArm:
                         entity_center=entity_center_abs,
                         llm_start=llm_start,
                         llm_end=llm_end,
-                        corrected_start=final_start if not is_compare_puzzle else None,
+                        corrected_start=final_start,
                     )
 
             # Execute drags, falling back to alternate mechanisms when hCaptcha

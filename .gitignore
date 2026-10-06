@@ -186,3 +186,4 @@ tmp/
 tmp-old/
 dev/
 dataset/
+.playwright-mcp/

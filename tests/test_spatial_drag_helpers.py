@@ -5,16 +5,21 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
+import numpy as np
 import pytest
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from hcaptcha_challenger.agent.challenger import (
     AgentV,
     RoboticArm,
+    _datapoint_offset_scale,
     _entity_centers_webpage,
     _nearest_entity_center,
 )
-from hcaptcha_challenger.tools.internal.providers.openai import _is_retryable
+from hcaptcha_challenger.tools.internal.providers.openai import (
+    _is_retryable,
+    extract_first_json_block,
+)
 
 
 class _Entity:
@@ -52,28 +57,91 @@ class TestNearestEntityCenter:
         assert _nearest_entity_center((460, 95), CENTERS, 80) == (470, 100)
 
 
+BBOX_500 = {"x": 50.0, "y": 100.0, "width": 500.0, "height": 470.0}
+# Datapoint measured at (10,135) in a 500x470 view, 1:1 scale
+OFFSET = (10, 135, 1.0)
+IMG_500_470 = (500, 470)
+
+
 class TestEntityCentersWebpage:
-    def test_top_left_to_center_conversion(self):
+    def test_center_coords_with_offset(self):
+        # coords are the entity CENTER in datapoint space
         task = _Task([_Entity([436, 74], [64, 52])])
-        assert _entity_centers_webpage(task, BBOX) == [(518, 200)]
+        assert _entity_centers_webpage(task, BBOX_500, OFFSET, IMG_500_470) == [(496, 309)]
 
     def test_multiple_entities(self):
         task = _Task([_Entity([436, 74], [64, 52]), _Entity([436, 256], [64, 52])])
-        assert _entity_centers_webpage(task, BBOX) == [(518, 200), (518, 382)]
+        assert _entity_centers_webpage(task, BBOX_500, OFFSET, IMG_500_470) == [
+            (496, 309),
+            (496, 491),
+        ]
+
+    def test_hidpi_image_scaling(self):
+        # challenge image is 2x backing store (1000x940) while CSS bbox is 500x470
+        task = _Task([_Entity([436, 74], [64, 52])])
+        hidpi_bbox = {"x": 50.0, "y": 100.0, "width": 500.0, "height": 470.0}
+        # datapoint drawn at 2x inside the 2x canvas: offset (20,270), scale 2
+        assert _entity_centers_webpage(task, hidpi_bbox, (20, 270, 2.0), (1000, 940)) == [
+            (496, 309)
+        ]
 
     def test_missing_geometry_skipped(self):
-        task = _Task([_Entity(None, [64, 52]), _Entity([436, 74], None)])
-        assert _entity_centers_webpage(task, BBOX) == []
+        task = _Task([_Entity(None, [64, 52])])
+        assert _entity_centers_webpage(task, BBOX_500, OFFSET, IMG_500_470) == []
+
+    def test_no_offset_means_no_snap(self):
+        # without a datapoint match we don't know where entities render —
+        # better to skip snapping than apply a wrong correction
+        task = _Task([_Entity([436, 74], [64, 52])])
+        assert _entity_centers_webpage(task, BBOX_500, None, IMG_500_470) == []
 
     def test_no_bbox_or_task(self):
         task = _Task([_Entity([436, 74], [64, 52])])
-        assert _entity_centers_webpage(task, None) == []
-        assert _entity_centers_webpage(None, BBOX) == []
+        assert _entity_centers_webpage(task, None, OFFSET, IMG_500_470) == []
+        assert _entity_centers_webpage(None, BBOX_500, OFFSET, IMG_500_470) == []
+
+
+class TestDatapointOffsetScale:
+    def _scene(self):
+        rng = np.random.default_rng(7)
+        return rng.integers(0, 255, (320, 480, 3), dtype=np.uint8)
+
+    def test_locates_datapoint_at_offset(self):
+        dp = self._scene()
+        view = np.full((470, 500, 3), 40, dtype=np.uint8)
+        view[135 : 135 + 320, 10 : 10 + 480] = dp
+        assert _datapoint_offset_scale(view, dp) == (10, 135, 1.0)
+
+    def test_scaled_datapoint(self):
+        dp = self._scene()
+        view = np.full((940, 1000, 3), 40, dtype=np.uint8)
+        dp2x = np.kron(dp, np.ones((2, 2, 1), dtype=np.uint8)).astype(np.uint8)
+        view[270 : 270 + 640, 20 : 20 + 960] = dp2x
+        off = _datapoint_offset_scale(view, dp)
+        assert off is not None and off[2] == 2.0 and off[:2] == (20, 270)
+
+    def test_no_match_returns_none(self):
+        dp = self._scene()
+        view = np.zeros((470, 500, 3), dtype=np.uint8)
+        assert _datapoint_offset_scale(view, dp) is None
 
 
 def _status_err(code: int) -> APIStatusError:
     req = httpx.Request("POST", "https://example.test/v1/chat")
     return APIStatusError("err", response=httpx.Response(code, request=req), body=None)
+
+
+class TestExtractFirstJsonBlock:
+    def test_valid_fenced_json(self):
+        assert extract_first_json_block('```json\n{"a": 1}\n```') == {"a": 1}
+
+    def test_malformed_fenced_json_returns_none(self):
+        # Model fencing broken JSON must not leak a raw JSONDecodeError —
+        # returning None lets the caller raise the retryable wrapped error.
+        assert extract_first_json_block('```json\n{"a": 1,}\n```') is None
+
+    def test_no_block(self):
+        assert extract_first_json_block("plain text") is None
 
 
 class TestRetryPredicate:
