@@ -50,6 +50,29 @@ def _is_retryable(exc: BaseException) -> bool:
     return False
 
 
+def _schema_example(response_schema: type[BaseModel]) -> dict:
+    """Build a concrete JSON example from a pydantic model's schema."""
+    defs = response_schema.model_json_schema().get("$defs", {})
+
+    def build(node: dict):
+        if "$ref" in node:
+            node = defs.get(node["$ref"].rsplit("/", 1)[-1], node)
+        t = node.get("type")
+        if "properties" in node or t == "object":
+            return {k: build(v) for k, v in node.get("properties", {}).items()}
+        if t == "array":
+            return [build(node.get("items", {}))]
+        if t == "integer":
+            return 123
+        if t == "number":
+            return 12.3
+        if t == "boolean":
+            return True
+        return "..."
+
+    return build(response_schema.model_json_schema())
+
+
 def extract_first_json_block(text: str) -> dict | None:
     """Extract the first JSON code block from text."""
     pattern = r"```json\s*([\s\S]*?)```"
@@ -273,16 +296,28 @@ class OpenAIProvider:
         if user_prompt:
             content.insert(0, {"type": "text", "text": user_prompt})
 
+        # Get schema for structured output
+        schema = response_schema.model_json_schema()
+
+        # Some OpenAI-compatible providers ignore response_format entirely
+        # (e.g. z.ai free tier), so the output contract must also live in
+        # the prompt text. A concrete example works better than a raw schema
+        # dump — weak models otherwise echo the schema itself.
+        schema_contract = (
+            f"{description or 'You are a helpful assistant.'}\n\n"
+            "## Output contract\n"
+            "Respond with a single raw JSON object in exactly this shape. "
+            "No markdown fences, no commentary, no other fields.\n"
+            f"{json.dumps(_schema_example(response_schema), ensure_ascii=False)}"
+        )
+
         messages = [
             {
                 "role": "system",
-                "content": description or "You are a helpful assistant.",
+                "content": schema_contract,
             },
             {"role": "user", "content": content},
         ]
-
-        # Get schema for structured output
-        schema = response_schema.model_json_schema()
 
         # Log request if enabled
         if self._enable_logging:
