@@ -1470,7 +1470,20 @@ class RoboticArm:
                     )
                     if verified and verified.paths:
                         logger.debug(f"Verification pass: {verified.log_message}")
-                        response.paths = verified.paths
+                        # Keep a verified path only when it isn't worse than the
+                        # original — the verifier can itself emit degenerate or
+                        # out-of-bounds paths (measured on replay corpus).
+                        img_w, img_h = img_size
+                        merged = []
+                        for i, vp in enumerate(verified.paths):
+                            v_bad = (
+                                (vp.start_point.x, vp.start_point.y)
+                                == (vp.end_point.x, vp.end_point.y)
+                            ) or not (0 <= vp.end_point.x <= img_w and 0 <= vp.end_point.y <= img_h)
+                            orig = response.paths[i] if i < len(response.paths) else None
+                            merged.append(orig if (orig is not None and v_bad) else vp)
+                        merged.extend(response.paths[len(verified.paths) :])
+                        response.paths = merged
                         originals = [
                             (
                                 (int(p.start_point.x), int(p.start_point.y)),
