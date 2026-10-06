@@ -5,6 +5,7 @@
 # Tests that run without API keys or a browser.
 OFFLINE_TESTS := \
 	tests/test_spatial_drag_helpers.py \
+	tests/test_skill_rules.py \
 	tests/test_prompt_contracts.py \
 	tests/test_schema_image_binary_challenge.py \
 	tests/test_refine_click_point.py \

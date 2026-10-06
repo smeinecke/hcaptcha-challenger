@@ -195,6 +195,16 @@ class SkillManager:
     @staticmethod
     def _fallback_prompt(job_type: ChallengeTypeEnum | None) -> str:
         """Generate a fallback prompt when no matching rule is found."""
+        if job_type in (
+            ChallengeTypeEnum.IMAGE_DRAG_SINGLE,
+            ChallengeTypeEnum.IMAGE_DRAG_MULTI,
+        ):
+            return (
+                f"JobType: {job_type.value}\n"
+                "Drag the movable item from the side tray onto the position in "
+                "the scene that satisfies the instruction shown in the image. "
+                "Start at the item's center, end at the target's center."
+            )
         if job_type:
             return f"JobType: {job_type.value}"
         return ""

@@ -4,6 +4,27 @@
 version: "0.1.0"
 base_url: "https://raw.githubusercontent.com/QIN2DIM/hcaptcha-challenger/main/src/hcaptcha_challenger/skills/library"
 rules:
+  - triggers: ["screw"]
+    template: "drag_screw_joint.md"
+
+  - triggers: ["joint"]
+    template: "drag_screw_joint.md"
+
+  - triggers: ["empty cell"]
+    template: "drag_pattern_cell.md"
+
+  - triggers: ["completes the pattern"]
+    template: "drag_pattern_cell.md"
+
+  - triggers: ["complete the pattern"]
+    template: "drag_pattern_cell.md"
+
+  - triggers: ["matching outline"]
+    template: "drag_object_to_shadow_v3_cn.md"
+
+  - triggers: ["matching silhouette"]
+    template: "drag_object_to_shadow_v3_cn.md"
+
   - triggers: ["similar"]
     job_type: "image_drag_single"
     template: "drag_similar.md"

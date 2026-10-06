@@ -1342,20 +1342,41 @@ class RoboticArm:
                 # is not a reliable signal (right-side trays are also used by
                 # matching/screw variants).
 
-            # Tell the model how many draggable pieces exist so it returns a
-            # single source→target path per needed drag instead of inventing
-            # extra drags.
-            if has_source_entities and len(task.entities) > 1:
-                user_prompt += (
-                    f"\n\n注意：侧边栏中有{len(task.entities)}个可拖拽图形，"
-                    f"请只拖动完成题目所需的那一个。"
-                )
+            # Challenge bbox + image size are needed BEFORE the model call:
+            # entity centers can then be injected into the prompt so the model
+            # starts drags on real tray pieces instead of scene cells.
+            challenge_view = frame_challenge.locator("//div[@class='challenge-view']")
+            bbox = await challenge_view.bounding_box()
+            try:
+                img_size = Image.open(raw).size
+            except Exception:  # noqa: BLE001
+                img_size = (0, 0)
 
             data_offset = None
+            entity_centers: list[tuple[int, int]] = []
             if has_source_entities:
                 # Datapoint (puzzle scene) placement inside the view — needed to
                 # map entity coords (datapoint space) to view/webpage coords.
                 data_offset = await self._datapoint_view_offset(task, raw, cache_key, cid)
+                entity_centers = _entity_centers_webpage(task, bbox, data_offset, img_size)
+                if entity_centers:
+                    logger.debug(f"Entity centers (webpage): {entity_centers}")
+
+                # Tell the model where the draggable pieces are. The start of
+                # every path must be one of these centers — the model otherwise
+                # tends to point at the pattern cell it wants to fill.
+                centers_txt = " ".join(f"({x},{y})" for x, y in entity_centers)
+                if centers_txt:
+                    user_prompt += (
+                        f"\n\n注意：侧边栏中有{len(task.entities)}个可拖拽图形，"
+                        f"中心约在 {centers_txt}。每条路径的起点必须是其中之一，"
+                        f"终点是题目要求的目标位置；请只拖动完成题目所需的那一个。"
+                    )
+                elif len(task.entities) > 1:
+                    user_prompt += (
+                        f"\n\n注意：侧边栏中有{len(task.entities)}个可拖拽图形，"
+                        f"请只拖动完成题目所需的那一个。"
+                    )
 
                 # Single-entity challenges with the piece in the RIGHT-hand tray:
                 # crop the tray off the model's input so it focuses on the scene.
@@ -1447,22 +1468,10 @@ class RoboticArm:
                     path=cache_key.joinpath(f"{cache_key.name}_{cid}_model_answer.json")
                 )
 
-            # Get challenge bbox for coordinate translation (needed for all drag types)
-            challenge_view = frame_challenge.locator("//div[@class='challenge-view']")
-            bbox = await challenge_view.bounding_box()
-
             # Snap the drag SOURCE to known entity geometry — payload entities
             # are always the draggable pieces in the tray (ground truth).
             # Drop targets are baked into the scene and never listed as
             # entities, so there is no end-point snapping.
-            try:
-                img_size = Image.open(raw).size
-            except Exception:  # noqa: BLE001
-                img_size = (0, 0)
-            entity_centers = _entity_centers_webpage(task, bbox, data_offset, img_size)
-            if entity_centers:
-                logger.debug(f"Entity centers (webpage): {entity_centers}")
-
             # Single-entity challenges: the sole entity IS the draggable →
             # unconditional start correction.
             corrected_start = entity_centers[0] if len(entity_centers) == 1 else None
